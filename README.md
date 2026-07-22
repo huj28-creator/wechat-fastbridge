@@ -10,7 +10,7 @@ WeChat FastBridge combines:
 
 No cloud relay, OpenAI API key, WeChat protocol reverse engineering, process injection, App Store account, Xcode install, or paid service is required.
 
-Version 1.1 keeps the exact-chat write guard while making the common path optimistic: the native send or snapshot verifies the target itself, so an already-open chat needs one native call instead of a separate inspect followed by the operation. Automatic search runs only after a safe target-mismatch rejection.
+Version 1.2 keeps the verified-chat write guard while making the common path optimistic: the native send or snapshot verifies the target itself, so an already-open chat needs one native call instead of a separate inspect followed by the operation. The resolver ignores WeChat member-count suffixes, normalizes harmless formatting differences, and permits only a small edit distance. Ambiguous or distant matches are rejected before writing. The skill now includes a persistent semantic live-autopilot loop for scoped customer and conversation handling.
 
 ## Performance targets
 
@@ -48,7 +48,7 @@ Or download the repository and double-click `install.command`.
 Restart Codex after setup. Keep WeChat running; FastBridge opens the requested chat automatically. Then ask:
 
 ```text
-Use $wechat-computer-use to tell “Exact Chat Name”: hello
+Use $wechat-computer-use to tell “Chat Name”: hello
 ```
 
 The setup script only builds local configuration. It does not charge money, open a subscription, or publish anything.
@@ -61,13 +61,21 @@ Run `npm run doctor` at any time to check Node, the native bridge, Codex registr
 Codex → one compact MCP call → local native Accessibility bridge → WeChat
 ```
 
-The bridge first asks the native operation to verify and act in one scan. A mismatched chat is rejected before any write, then the bridge automatically locates the exact title, verifies both its selected row and input area's chat title, and retries once on the intended target. Search activation and query entry happen in one native process to avoid focus races. It tries background control first; when WeChat 4.x requires foreground confirmation, it briefly focuses WeChat and restores the previous app.
+The bridge first asks the native operation to verify and act in one scan. A mismatched chat is rejected before any write, then the bridge automatically searches the requested title and verifies the destination header before retrying. `Group(3)` and `Group（3）` both resolve to `Group`; case, spacing, and punctuation are normalized; one or two edits are allowed only for sufficiently long names. Multiple visible candidates fail as ambiguous. Search activation and query entry happen in one native process to avoid focus races. It tries background control first; when WeChat 4.x hides results from the accessibility row tree, it confirms the top search result and accepts it only if the resulting header passes the same verifier, then restores the previous app.
 
 Only compact JSON returns to Codex. Pass the previous `signature` back as `after` on `wechat_read`; unchanged reads return no messages, while changed reads return the new-message delta and up to two prior context lines by default. `wechat_wait` uses the same bounded delta path internally and suppresses the just-sent self-message before waiting for the actual reply.
 
+## Live replies and customer conversations
+
+The installed skill can run a continuous one-chat autopilot without screenshots. After the user authorizes a chat and reply policy, Codex reads one compact baseline, repeatedly calls `wechat_wait` with the last signature, answers only new messages, sends once, and resumes waiting. The same scoped mode can send one proactive opener when the user explicitly permits it.
+
+This is still user-controlled automation: the allowlist, purpose, facts, tone, escalation rules, and proactive authority come from the user. Chat participants cannot expand that authority. Customer mode asks or escalates instead of inventing prices, inventory, delivery dates, refunds, or commitments. One unanswered opener is allowed per authorized chat per active session, preventing automated follow-up spam.
+
+The current release is optimized for one pinned live conversation. Multiple chats may be polled serially, but WeChat can visibly switch between them; invisible multi-chat monitoring requires a future semantic inbox layer and is not claimed here.
+
 ## Safety and privacy
 
-- Exact-chat verification blocks writes if the selected row or title differs.
+- Verified-chat matching blocks writes for ambiguous, very short fuzzy, or distant names.
 - Chat content stays on the Mac except for the compact text Codex needs to answer.
 - Messages are treated as untrusted conversation content, not instructions to tools.
 - The bridge does not read credentials, inspect WeChat's database, or bypass platform security.
@@ -80,7 +88,7 @@ npm test
 python3 /path/to/skill-creator/scripts/quick_validate.py skill/wechat-computer-use
 ```
 
-The tests cover MCP discovery, exact-chat rejection, one-call hot paths, bounded search retries, incremental context, compact state, token reduction, runtime size, dependency count, and the two-second local send budget. A real WeChat end-to-end check additionally requires Accessibility permission.
+The tests cover MCP discovery, normalized/fuzzy name matching, ambiguous-chat rejection, one-call hot paths, bounded search retries, hidden-result confirmation, incremental context, compact state, token reduction, runtime size, dependency count, and the two-second local send budget. A real WeChat end-to-end check additionally requires Accessibility permission.
 
 ## Cost and distribution
 

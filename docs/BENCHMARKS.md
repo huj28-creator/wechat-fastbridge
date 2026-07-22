@@ -1,10 +1,10 @@
 # Benchmarks
 
-## Version 1.1 algorithm gates
+## Version 1.2 algorithm gates
 
-The v1.1 hot path removes the separate `inspect-fast` process when the requested chat is already selected. The native `snapshot` and `send` commands still reject a mismatched selected row or header before returning or writing anything.
+The v1.2 hot path removes the separate `inspect-fast` process when the requested chat is already selected. The native `snapshot` and `send` commands still reject a mismatched selected row or header before returning or writing anything. The resolver additionally normalizes member counts/formatting, uses a bounded typo distance, and requires the selected conversation and final header to agree.
 
-| Gate | v1.0 path | v1.1 path |
+| Gate | v1.0 path | v1.2 path |
 | --- | ---: | ---: |
 | Already-selected send native calls | inspect + send | send |
 | Already-selected read native calls | inspect + snapshot | snapshot |
@@ -16,6 +16,8 @@ The v1.1 hot path removes the separate `inspect-fast` process when the requested
 | Cached context bound | none | 8 chats × 4 snapshots × 20 messages |
 | Runtime footprint gate | none | <256 KiB |
 | Production dependency ceiling | none | 2 |
+| Chat-name resolver | exact text | ignores member counts/formatting; bounded typo distance |
+| Live reply context | repeated full reads | signature wait + new delta + bounded context |
 
 The one-call behavior, target-mismatch fallback, transient search-result retry, unchanged suppression, delta overlap, limit-change fallback, self-send suppression, and context bound are automated tests. Based on the separately measured 499 ms native send and 465 ms native snapshot below, removing the preceding scan should save roughly one native-process round trip on an already-selected chat. That is a component estimate, not a new end-to-end claim; real UI timings still vary with WeChat state and user activity.
 
@@ -51,7 +53,7 @@ Three user-authorized messages were delivered across development: `testing sendi
 ## Automated gates
 
 - MCP server exposes only compact semantic tools.
-- Seventeen tests cover MCP discovery, compact native round trips, optimistic single-call paths, automatic-selection recovery, incremental context, self-send suppression, skill packaging, runtime size, dependency count, token reduction, and wrong-chat rejection.
+- Twenty-one tests cover MCP discovery, normalized/fuzzy chat names, compact native round trips, optimistic single-call paths, automatic-selection recovery, inaccessible result confirmation, post-selection settling, incremental context, self-send suppression, skill packaging, runtime size, dependency count, token reduction, and wrong-chat rejection.
 - Compact Computer Use fallback removes at least 80% of representative UI-tree characters.
 - Exact-chat mismatch prevents writes.
 - Skill passes the standard Codex skill validator.

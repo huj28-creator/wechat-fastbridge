@@ -134,10 +134,59 @@ static NSArray<NSString *> *SubtreeStrings(AXUIElementRef element) {
     return values.array;
 }
 
-static BOOL ExactHeader(NSString *value, NSString *chat) {
+static NSString *NormalizeChatName(NSString *value) {
+    if (!value.length) return @"";
+    NSString *trimmed = [value stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    NSRegularExpression *count = [NSRegularExpression regularExpressionWithPattern:@"\\s*[（(]\\s*\\d+\\s*[)）]\\s*$" options:0 error:nil];
+    trimmed = [count stringByReplacingMatchesInString:trimmed options:0 range:NSMakeRange(0, trimmed.length) withTemplate:@""];
+    NSMutableString *normalized = [NSMutableString string];
+    NSCharacterSet *kept = [NSCharacterSet.alphanumericCharacterSet invertedSet];
+    NSString *folded = [trimmed precomposedStringWithCompatibilityMapping].lowercaseString;
+    [folded enumerateSubstringsInRange:NSMakeRange(0, folded.length)
+                               options:NSStringEnumerationByComposedCharacterSequences
+                            usingBlock:^(NSString *part, NSRange range, NSRange enclosing, BOOL *stop) {
+        if ([part rangeOfCharacterFromSet:kept].location == NSNotFound) [normalized appendString:part];
+    }];
+    return normalized;
+}
+
+static NSUInteger ChatNameDistance(NSString *left, NSString *right) {
+    NSUInteger a = left.length, b = right.length;
+    if (!a) return b;
+    if (!b) return a;
+    NSUInteger *previous = calloc(b + 1, sizeof(NSUInteger));
+    NSUInteger *current = calloc(b + 1, sizeof(NSUInteger));
+    for (NSUInteger j = 0; j <= b; j++) previous[j] = j;
+    for (NSUInteger i = 1; i <= a; i++) {
+        current[0] = i;
+        for (NSUInteger j = 1; j <= b; j++) {
+            NSUInteger replace = previous[j - 1] + ([left characterAtIndex:i - 1] == [right characterAtIndex:j - 1] ? 0 : 1);
+            current[j] = MIN(MIN(previous[j] + 1, current[j - 1] + 1), replace);
+        }
+        NSUInteger *swap = previous; previous = current; current = swap;
+    }
+    NSUInteger result = previous[b];
+    free(previous); free(current);
+    return result;
+}
+
+static BOOL ChatNameMatches(NSString *value, NSString *chat) {
     if ([value isEqualToString:chat]) return YES;
-    NSString *pattern = [NSString stringWithFormat:@"^%@ \\(\\d+\\)$", [NSRegularExpression escapedPatternForString:chat]];
-    return [value rangeOfString:pattern options:NSRegularExpressionSearch].location != NSNotFound;
+    NSString *candidate = NormalizeChatName(value);
+    NSString *requested = NormalizeChatName(chat);
+    if (!candidate.length || !requested.length) return NO;
+    if ([candidate isEqualToString:requested]) return YES;
+    NSUInteger shortest = MIN(candidate.length, requested.length);
+    if (shortest < 3) return NO;
+    NSUInteger allowed = shortest <= 5 ? 1 : (shortest <= 10 ? 2 : MIN((NSUInteger)3, MAX((NSUInteger)2, shortest / 5)));
+    return ChatNameDistance(candidate, requested) <= allowed;
+}
+
+static BOOL RowTitleMatches(NSString *value, NSString *chat) {
+    if ([value isEqualToString:chat] || [value hasPrefix:[chat stringByAppendingString:@","]]) return YES;
+    if (ChatNameMatches(value, chat)) return YES;
+    NSRange separator = [value rangeOfString:@","];
+    return separator.location != NSNotFound && ChatNameMatches([value substringToIndex:separator.location], chat);
 }
 
 static NSString *FNV1a(NSString *value) {
@@ -150,7 +199,7 @@ static NSString *FNV1a(NSString *value) {
 
 static BOOL IsMessageNoise(NSString *value, NSString *chat) {
     NSString *trimmed = [value stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-    if (!trimmed.length || [trimmed isEqualToString:@"Field"] || ExactHeader(trimmed, chat)) return YES;
+    if (!trimmed.length || [trimmed isEqualToString:@"Field"] || ChatNameMatches(trimmed, chat)) return YES;
     NSRegularExpression *time = [NSRegularExpression regularExpressionWithPattern:@"^(昨天 )?\\d{1,2}:\\d{2}$" options:0 error:nil];
     return [time firstMatchInString:trimmed options:0 range:NSMakeRange(0, trimmed.length)] != nil;
 }
@@ -242,6 +291,17 @@ int main(int argc, const char *argv[]) {
         for (int i = 1; i < argc; i++) [args addObject:[NSString stringWithUTF8String:argv[i]]];
         NSString *command = args.firstObject;
         if (!command) Fail(@"USAGE", @"status|snapshot|send");
+        if ([command isEqualToString:@"match-name"]) {
+            NSString *chat = Option(args, @"--chat") ?: @"";
+            NSString *candidate = Option(args, @"--candidate") ?: @"";
+            NSString *requestedNormalized = NormalizeChatName(chat);
+            NSString *candidateNormalized = NormalizeChatName(candidate);
+            Emit(@{ @"ok": @YES, @"matched": @(ChatNameMatches(candidate, chat)),
+                    @"requested": requestedNormalized, @"candidate": candidateNormalized,
+                    @"distance": @(ChatNameDistance(requestedNormalized, candidateNormalized)),
+                    @"latencyMs": @(-started.timeIntervalSinceNow * 1000) }, stdout);
+            return 0;
+        }
         if (!AXIsProcessTrusted()) Fail(@"ACCESSIBILITY_PERMISSION_REQUIRED", @"Enable Accessibility for Codex or Terminal");
         NSArray<NSRunningApplication *> *apps = [NSRunningApplication runningApplicationsWithBundleIdentifier:@"com.tencent.xinWeChat"];
         NSRunningApplication *app = apps.firstObject;
@@ -278,7 +338,7 @@ int main(int argc, const char *argv[]) {
         }
 
         NSString *chat = Option(args, @"--chat");
-        if (!chat.length) Fail(@"CHAT_REQUIRED", @"Pass the exact chat title");
+        if (!chat.length) Fail(@"CHAT_REQUIRED", @"Pass the requested chat title");
         NSInteger limit = MAX(1, MIN(20, [Option(args, @"--limit") ?: @"8" integerValue]));
         BOOL fastScan = [command isEqualToString:@"search"] || [command isEqualToString:@"select"] ||
                         [command isEqualToString:@"send"] || [command isEqualToString:@"inspect-fast"];
@@ -350,16 +410,21 @@ int main(int argc, const char *argv[]) {
                     @"settable": node[@"settable"], @"x": @(fieldFrame.origin.x), @"y": @(fieldFrame.origin.y),
                     @"w": @(fieldFrame.size.width), @"h": @(fieldFrame.size.height)}];
             }
-            if ([role isEqualToString:(__bridge NSString *)kAXRowRole]) {
-                for (NSString *value in strings) {
-                    if ([value isEqualToString:chat] || [value hasPrefix:[chat stringByAppendingString:@","]]) {
-                        BOOL visibleExactRow = !NSEqualRects(nodeFrame, NSZeroRect) &&
-                            NSIntersectsRect(nodeFrame, windowFrame) &&
-                            NSMidX(nodeFrame) >= NSMinX(windowFrame) && NSMidX(nodeFrame) <= NSMaxX(windowFrame) &&
-                            NSMidY(nodeFrame) >= NSMinY(windowFrame) && NSMidY(nodeFrame) <= NSMaxY(windowFrame);
-                        if (visibleExactRow) {
-                            if (!targetRow) targetRow = node;
-                            targetRowMatches += 1;
+            BOOL rowOrCell = [role isEqualToString:(__bridge NSString *)kAXRowRole] ||
+                             [role isEqualToString:(__bridge NSString *)kAXCellRole];
+            BOOL visibleLeftResult = rowOrCell && !NSEqualRects(nodeFrame, NSZeroRect) &&
+                NSIntersectsRect(nodeFrame, windowFrame) && NSMidX(nodeFrame) < NSMidX(windowFrame) &&
+                NSMidY(nodeFrame) >= NSMinY(windowFrame) && NSMidY(nodeFrame) <= NSMaxY(windowFrame);
+            if (visibleLeftResult) {
+                NSArray<NSString *> *candidateStrings = SubtreeStrings((__bridge AXUIElementRef)node[@"element"]);
+                for (NSString *value in candidateStrings) {
+                    if (RowTitleMatches(value, chat)) {
+                        if (!targetRow) {
+                            targetRow = node;
+                            targetRowMatches = 1;
+                        } else {
+                            NSRect existingFrame = [targetRow[@"frame"] rectValue];
+                            if (!NSEqualRects(existingFrame, nodeFrame)) targetRowMatches += 1;
                         }
                         break;
                     }
@@ -375,18 +440,18 @@ int main(int argc, const char *argv[]) {
                 NSArray *subtree = SubtreeStrings((__bridge AXUIElementRef)node[@"element"]);
                 if (inspectSelected.count < 10) [inspectSelected addObject:subtree];
                 for (NSString *value in subtree) {
-                    if ([value isEqualToString:chat] || [value hasPrefix:[chat stringByAppendingString:@","]]) selectedMatched = YES;
+                    if (RowTitleMatches(value, chat)) selectedMatched = YES;
                 }
             }
             if (rightPane(node) && [role isEqualToString:(__bridge NSString *)kAXStaticTextRole]) {
                 if (inspectHeaders.count < 20 && strings.count) [inspectHeaders addObject:strings];
-                for (NSString *value in strings) if (ExactHeader(value, chat)) headerMatched = YES;
+                for (NSString *value in strings) if (ChatNameMatches(value, chat)) headerMatched = YES;
             }
             NSRect frame = [node[@"frame"] rectValue];
             if (rightPane(node) && [node[@"settable"] boolValue] &&
                 ([role isEqualToString:(__bridge NSString *)kAXTextAreaRole] || [role isEqualToString:(__bridge NSString *)kAXTextFieldRole]) && NSMidY(frame) > NSMidY(windowFrame)) {
                 if (inspectInputs.count < 10) [inspectInputs addObject:@{@"role": role, @"strings": strings}];
-                for (NSString *value in strings) if (ExactHeader(value, chat)) headerMatched = YES;
+                for (NSString *value in strings) if (ChatNameMatches(value, chat)) headerMatched = YES;
                 if (!input || NSMidY(frame) > NSMidY([input[@"frame"] rectValue])) input = node;
             }
             BOOL isInputRole = [role isEqualToString:(__bridge NSString *)kAXTextAreaRole] || [role isEqualToString:(__bridge NSString *)kAXTextFieldRole];
@@ -564,7 +629,7 @@ int main(int argc, const char *argv[]) {
                    @"selectedMatched": @(selectedMatched), @"headerMatched": @(headerMatched), @"nodeCount": @(nodes.count)}, stdout);
             return 0;
         }
-        if (!selectedMatched || !headerMatched) Fail(@"WECHAT_TARGET_MISMATCH", [@"Select the exact chat: " stringByAppendingString:chat]);
+        if (!selectedMatched || !headerMatched) Fail(@"WECHAT_TARGET_MISMATCH", [@"Select the verified chat: " stringByAppendingString:chat]);
         if (!input) Fail(@"WECHAT_INPUT_NOT_FOUND", chat);
         NSArray *allMessages = messages.array;
         NSArray *recent = allMessages.count > limit ? [allMessages subarrayWithRange:NSMakeRange(allMessages.count - limit, limit)] : allMessages;

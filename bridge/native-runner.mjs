@@ -94,12 +94,23 @@ export class NativeBridge {
 
   async #autoSelect(chat, { allowFocus, knownMismatch = false }) {
     if (!knownMismatch && await this.#verifyFast(chat)) return { selected: true, focusUsed: false };
+    // Prefer a visible normalized/fuzzy sidebar match. This handles a small typo
+    // without asking WeChat's literal search box to understand the typo, and it
+    // avoids foreground focus when Accessibility can press the row directly.
+    try {
+      await this.run("select", ["--chat", chat]);
+      await this.delay(120);
+      if (await this.#verifyFast(chat)) return { selected: true, focusUsed: false };
+    } catch (error) {
+      if (error?.error !== "WECHAT_CHAT_NOT_VISIBLE" && error?.error !== "WECHAT_SEARCH_RESULT_NOT_VISIBLE") throw error;
+    }
     if (!allowFocus) throw Object.assign(new Error("WECHAT_FOCUS_REQUIRED"), { error: "WECHAT_FOCUS_REQUIRED", detail: `Cannot open ${chat} fully in the background` });
     const searchArgs = ["--chat", chat, "--global-keys", "--no-confirm"];
     if (this.system.focusWeChat) await this.#focusWeChat();
     else searchArgs.push("--activate");
     await this.run("search", searchArgs);
     let selected = false;
+    let rowUnavailable = false;
     for (const waitMs of [160, 240, 360, 800]) {
       await this.delay(waitMs);
       try {
@@ -107,8 +118,22 @@ export class NativeBridge {
         selected = true;
         break;
       } catch (error) {
-        if (error?.error !== "WECHAT_CHAT_NOT_VISIBLE" && error?.error !== "WECHAT_SEARCH_RESULT_NOT_VISIBLE") throw error;
+        if (error?.error === "WECHAT_CHAT_NOT_VISIBLE") {
+          rowUnavailable = true;
+          break;
+        }
+        if (error?.error !== "WECHAT_SEARCH_RESULT_NOT_VISIBLE") throw error;
       }
+    }
+    // WeChat 4.x sometimes renders search results outside the accessibility row
+    // tree. Confirm the top result, then accept it only if the current-chat header
+    // passes the native normalized/fuzzy verifier. No message is written here.
+    if (!selected && rowUnavailable) {
+      const confirmArgs = ["--chat", chat, "--global-keys"];
+      if (!this.system.focusWeChat) confirmArgs.push("--activate");
+      await this.run("search", confirmArgs);
+      await this.delay(300);
+      selected = await this.#verifyFast(chat);
     }
     if (!selected) throw Object.assign(new Error("WECHAT_AUTO_SELECT_FAILED"), { error: "WECHAT_AUTO_SELECT_FAILED", detail: chat });
     await this.delay(240);
@@ -172,7 +197,13 @@ export class NativeBridge {
     } catch (error) {
       if (!autoSelect || error?.error !== "WECHAT_TARGET_MISMATCH") throw error;
       selection = await this.selectChat({ chat, allowFocus, knownMismatch: true });
-      result = await this.#readRaw({ chat, limit });
+      try {
+        result = await this.#readRaw({ chat, limit });
+      } catch (retryError) {
+        if (retryError?.error !== "WECHAT_TARGET_MISMATCH") throw retryError;
+        await this.delay(300);
+        result = await this.#readRaw({ chat, limit });
+      }
     }
     if (autoSelect) {
       result.autoSelected = true;
@@ -206,7 +237,12 @@ export class NativeBridge {
           if (!previousBundle) previousBundle = await this.#frontBundle();
           const selection = await this.#autoSelect(chat, { allowFocus, knownMismatch: true });
           focusUsed = selection.focusUsed;
-          try { result = await runSend(); } catch (retryError) { error = retryError; }
+          try { result = await runSend(); } catch (retryError) {
+            if (retryError?.error === "WECHAT_TARGET_MISMATCH") {
+              await this.delay(300);
+              try { result = await runSend(); } catch (settledError) { error = settledError; }
+            } else error = retryError;
+          }
         }
         if (!result) {
           if (!allowFocus || error?.error !== "WECHAT_SEND_SHORTCUT_UNKNOWN") throw error;

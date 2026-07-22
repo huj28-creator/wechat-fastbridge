@@ -41,7 +41,7 @@ FastBridge does not need Screen Recording in normal mode. The optional Computer 
 
 ## 3. Check that it works
 
-Open WeChat once. You do not need to select the target chat; FastBridge searches and opens the exact title automatically.
+Open WeChat once. You do not need to select the target chat; FastBridge resolves and verifies the requested title automatically. Member-count suffixes and a small typo are tolerated, while ambiguous names are rejected.
 
 In Codex, ask:
 
@@ -68,7 +68,7 @@ npm run doctor
 Quiet Mode uses background control whenever WeChat permits it.
 
 1. Keep WeChat running.
-2. Ask Codex to read, wait, or send in an exact chat title.
+2. Ask Codex to read, wait, or send in a chat title. The closest unambiguous verified match may be used.
 3. FastBridge searches automatically. WeChat 4.x may appear briefly while the exact result is confirmed, then the previous app is restored.
 
 No manual chat selection is required. To forbid even a brief focus fallback, advanced callers may set `allowFocus: false`; automatic selection can then fail when WeChat blocks background confirmation.
@@ -92,7 +92,7 @@ It does not need your WeChat password, Apple ID password, contacts export, micro
 
 - **ACCESSIBILITY_PERMISSION_REQUIRED**: repeat step 2, then restart Codex.
 - **WECHAT_NOT_RUNNING**: open WeChat.
-- **WECHAT_TARGET_MISMATCH**: the chat changed while FastBridge was checking it. Stop typing for a moment and retry with the exact title; no manual chat click is required.
+- **WECHAT_TARGET_MISMATCH**: the chat changed while FastBridge was checking it. Stop typing for a moment and retry with the best available title; no manual chat click is required.
 - **WECHAT_INPUT_NOT_FOUND**: close photo/video viewers and return to the chat window.
 - **WECHAT_SEND_SHORTCUT_UNKNOWN**: check the draft; FastBridge did not claim success.
 - **Message stays in the input box**: update FastBridge and report your WeChat version in an issue.

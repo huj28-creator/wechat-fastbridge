@@ -16,7 +16,7 @@ This path is free. It needs no App Store membership, cloud server, API key, Xcod
 - `WECHAT_NOT_RUNNING`: open WeChat.
 - `WECHAT_WINDOW_NOT_FOUND`: return to the main WeChat chat window.
 - `WECHAT_TARGET_MISMATCH`: the chat changed during verification; stop rather than guessing or fighting the user's interaction.
-- `WECHAT_AUTO_SELECT_FAILED`: confirm the exact title exists and WeChat's main window is open.
+- `WECHAT_AUTO_SELECT_FAILED`: confirm a close, unambiguous title exists and WeChat's main window is open.
 - `WECHAT_AMBIGUOUS_CHAT`: more than one result has the exact same title; rename or disambiguate the chat before sending.
 - `WECHAT_INPUT_NOT_FOUND`: close viewers/dialogs and return to the main chat.
 - timeout: call status once; do not retry a send until delivery is known.

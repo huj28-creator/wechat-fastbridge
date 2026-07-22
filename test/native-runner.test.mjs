@@ -31,6 +31,7 @@ async function searchableFakeBridge() {
   const dir = await mkdtemp(join(tmpdir(), "wechat-fastbridge-search-"));
   const binary = join(dir, "wechat-ax");
   const state = join(dir, "selected");
+  const searched = join(dir, "searched");
   await writeFile(binary, `#!/bin/sh
 case "$1" in
   inspect-fast)
@@ -40,10 +41,16 @@ case "$1" in
       printf '{"ok":true,"selectedMatched":false,"headerMatched":false,"inputs":[]}\\n'
     fi ;;
   search)
+    touch "${searched}"
     printf '{"ok":true,"searchAttempted":true}\\n' ;;
   select)
-    touch "${state}"
-    printf '{"ok":true,"selectionAttempted":true}\\n' ;;
+    if [ -f "${searched}" ]; then
+      touch "${state}"
+      printf '{"ok":true,"selectionAttempted":true}\\n'
+    else
+      printf '{"ok":false,"error":"WECHAT_CHAT_NOT_VISIBLE"}\\n' >&2
+      exit 2
+    fi ;;
   send)
     if [ -f "${state}" ]; then
       printf '{"ok":true,"chat":"Jerry","inputCleared":true,"sentChars":5}\\n'
@@ -180,7 +187,7 @@ test("automatic selection tolerates a briefly missing search result", async () =
       throw Object.assign(new Error("WECHAT_TARGET_MISMATCH"), { error: "WECHAT_TARGET_MISMATCH" });
     }
     if (command === "select" && selectAttempts++ === 0) {
-      throw Object.assign(new Error("WECHAT_CHAT_NOT_VISIBLE"), { error: "WECHAT_CHAT_NOT_VISIBLE" });
+      throw Object.assign(new Error("WECHAT_SEARCH_RESULT_NOT_VISIBLE"), { error: "WECHAT_SEARCH_RESULT_NOT_VISIBLE" });
     }
     if (command === "inspect-fast") return { ok: true, selectedMatched: true, headerMatched: true, inputs: [{}] };
     if (command === "snapshot") return { ok: true, chat: "lab", messages: ["A:ready"], signature: "s1" };
@@ -189,8 +196,63 @@ test("automatic selection tolerates a briefly missing search result", async () =
 
   const result = await bridge.read({ chat: "lab" });
   assert.equal(result.ok, true);
-  assert.deepEqual(calls, ["snapshot", "search", "select", "select", "inspect-fast", "snapshot"]);
+  assert.deepEqual(calls, ["snapshot", "select", "search", "select", "inspect-fast", "snapshot"]);
   assert.deepEqual(events, ["focus", "restore:com.example.previous"]);
+});
+
+test("automatic selection confirms an inaccessible WeChat 4 search result, then verifies it", async () => {
+  const calls = [];
+  let verified = false;
+  const bridge = new NativeBridge({
+    delay: async () => {},
+    system: {
+      frontBundle: async () => "com.example.previous",
+      focusWeChat: async () => {},
+      restorePrevious: async () => {},
+    },
+  });
+  bridge.run = async (command, args) => {
+    calls.push([command, args]);
+    if (command === "send" && !verified) {
+      throw Object.assign(new Error("WECHAT_TARGET_MISMATCH"), { error: "WECHAT_TARGET_MISMATCH" });
+    }
+    if (command === "select") {
+      throw Object.assign(new Error("WECHAT_CHAT_NOT_VISIBLE"), { error: "WECHAT_CHAT_NOT_VISIBLE" });
+    }
+    if (command === "search" && !args.includes("--no-confirm")) verified = true;
+    if (command === "inspect-fast") return { ok: true, selectedMatched: verified, headerMatched: verified, inputs: verified ? [{}] : [] };
+    return { ok: true, chat: "lab", inputCleared: true };
+  };
+
+  const result = await bridge.send({ chat: "傻比裙", text: "hello" });
+  assert.equal(result.ok, true);
+  assert.deepEqual(calls.map(([command]) => command), ["send", "select", "search", "select", "search", "inspect-fast", "inspect-fast", "send"]);
+  assert.equal(calls[4][1].includes("--no-confirm"), false);
+});
+
+test("read retries once when WeChat is still settling after verified selection", async () => {
+  const calls = [];
+  let snapshots = 0;
+  const bridge = new NativeBridge({
+    delay: async () => {},
+    system: {
+      frontBundle: async () => "com.example.previous",
+      restorePrevious: async () => {},
+    },
+  });
+  bridge.run = async (command) => {
+    calls.push(command);
+    if (command === "snapshot" && snapshots++ < 2) {
+      throw Object.assign(new Error("WECHAT_TARGET_MISMATCH"), { error: "WECHAT_TARGET_MISMATCH" });
+    }
+    if (command === "inspect-fast") return { ok: true, selectedMatched: true, headerMatched: true, inputs: [{}] };
+    if (command === "snapshot") return { ok: true, chat: "lab", messages: ["A:ready"], signature: "s1" };
+    return { ok: true };
+  };
+
+  const result = await bridge.read({ chat: "lab" });
+  assert.equal(result.ok, true);
+  assert.deepEqual(calls, ["snapshot", "select", "inspect-fast", "snapshot", "snapshot"]);
 });
 
 test("wait suppresses the just-sent message and returns the actual reply", async () => {
