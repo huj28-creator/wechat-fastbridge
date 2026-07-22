@@ -1,0 +1,22 @@
+{
+  "name": "wechat-fastbridge",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:native": "clang -O2 -fobjc-arc -arch arm64 -arch x86_64 -framework Cocoa -framework ApplicationServices bridge/native/wechat_ax.m -o bridge/native/wechat-ax",
+    "setup": "node scripts/setup.mjs",
+    "test": "node --test test/*.test.mjs",
+    "start": "node bridge/server.mjs"
+  },
+  "bin": {
+    "wechat-fastbridge": "bridge/server.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.5",
+    "zod": "^3.25.76"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

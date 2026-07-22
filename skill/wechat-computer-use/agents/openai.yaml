@@ -1,0 +1,4 @@
+interface:
+  display_name: "WeChat FastBridge"
+  short_description: "Fast, token-light WeChat control with safe fallback"
+  default_prompt: "Use $wechat-computer-use to read and reply in the exact WeChat chat within seconds using compact FastBridge tools."

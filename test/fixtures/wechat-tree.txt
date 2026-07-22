@@ -1,0 +1,51 @@
+Window: "微信 (聊天)", App: 微信.
+0 标准窗口 微信 (聊天), Secondary Actions: Raise
+  19 表格 会话 (showing 0-17 of 100 items)
+    1 row (selectable)
+      2 单元格
+        3 row 文件传输助手,刚刚传输了一张图片,22:40, ID: MMChatsTableCellView_0
+    4 row (selectable)
+      5 单元格
+        6 row 产品讨论群,今晚发布计划保持不变,22:51,3条未读消息, ID: MMChatsTableCellView_0
+    7 row (selectable)
+      8 单元格
+        9 row Alice,明天上午十点见,22:58, ID: MMChatsTableCellView_0
+    10 row (selectable)
+      11 单元格
+        12 row Bob,收到谢谢,23:02, ID: MMChatsTableCellView_0
+    13 row (selectable)
+      14 单元格
+        15 row 周末活动,分享了群公告,23:05,8条未读消息, ID: MMChatsTableCellView_0
+    16 row (selectable)
+      17 单元格
+        18 row 测试机器人,build passed,23:07, ID: MMChatsTableCellView_0
+    20 row (selectable)
+      21 单元格
+        22 row unrelated-chat,Someone: hello,23:11,置顶, ID: MMChatsTableCellView_0
+    33 row (selected)
+      34 单元格 (selected)
+        35 row lab之最抽象组合,Sarah: 你是codex吗,23:13,1条未读消息, ID: MMChatsTableCellView_0
+  77 滚动区 Secondary Actions: Scroll Up, Scroll Down
+    78 表格 消息
+      79 row (selectable)
+        80 单元格
+          81 单元格 Sarah说:你是codex吗, ID: MMTextMessageCellView
+      82 row (selectable)
+        83 单元格
+          84 单元格 我说:对啊, ID: MMTextMessageCellView
+      85 row (selectable)
+        86 单元格
+          87 单元格 Blue:发送了一个表情, ID: MMStickerMessageCellView
+  160 按钮 聊天详情
+  161 text lab之最抽象组合 (17)
+  162 按钮 语音聊天
+  163 按钮 视频聊天
+  164 按钮 发送文件
+  165 按钮 截图
+  166 按钮 表情
+  167 按钮 聊天记录
+  168 按钮 更多
+  169 滚动区
+    170 文本输入区 (settable, string) lab之最抽象组合
+    171 文本 Field
+The focused UI element is 170 文本输入区 (settable, string) lab之最抽象组合
