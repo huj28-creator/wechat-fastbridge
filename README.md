@@ -12,14 +12,14 @@ WeChat FastBridge combines:
 
 No cloud relay, OpenAI API key, WeChat protocol reverse engineering, process injection, App Store account, Xcode install, or paid service is required.
 
-Version 1.6 improves meaning rather than merely shortening history. Its bounded retriever connects related Chinese/English concepts such as price/cost, shipping/arrival, time, location, quantity, identity, decisions, preferences, and problems; rare facts and exact numbers receive extra weight. The public tool surface and skill instructions are smaller, while files, stickers, fuzzy verified routing, and the event-first allowlisted inbox remain available without screenshot input.
+Version 1.7 adds a bounded fact capsule beside the rolling chat window. High-signal prices, dates, addresses, orders, contacts, links, and confirmed decisions remain retrievable after ordinary conversation scrolls out; a newer conflicting number suppresses the stale fact. Inbox monitoring now ignores unread decreases caused by opening a chat, preserves commas in English previews, and still notices repeated previews when unread count rises. Runtime failures return compact structured errors instead of bulky protocol exceptions.
 
 ## Performance targets
 
 - Local semantic bridge budget: **under 2 seconds** before WeChat UI response time.
 - Measured real optimized selected-chat send: **1.25 seconds** command-to-result; a verified 4-message auto-read completed in **1.38 seconds**.
 - Measured v1.4 media sends in the authorized Jerry self-chat: **2.97 seconds** for a tiny file, **6.02 seconds** for a favorite sticker slot, and **8.57 seconds** for a searched sticker.
-- v1.6 tool definitions are **49% smaller** than the original baseline (5,624 → 2,849 characters) and **21% smaller** than v1.5. Triggered skill instructions are **3,472 bytes**. Repeated favorite-sticker sending remains **3.78 seconds cached** versus **6.78 seconds cold**.
+- v1.7 tool definitions remain **49% smaller** than the original baseline (5,624 → 2,849 characters) and **21% smaller** than v1.5. Triggered skill instructions are **3,924 bytes**, including the new fact/conflict and event rules. Repeated favorite-sticker sending remains **3.78 seconds cached** versus **6.78 seconds cold**.
 - Cold setup/check: **under 5 seconds** on a supported Mac.
 - Normal read result: **under 2,000 characters**.
 - Repeated reads: **zero messages when unchanged**; when changed, return only new messages plus 0–4 requested context lines.
@@ -34,10 +34,10 @@ Every result includes measured latency. The test suite fails if the mocked local
 - macOS 13 or newer
 - WeChat for Mac (`com.tencent.xinWeChat`)
 - Node.js 20 or newer
-
-The included Dockerfile exists only so MCP registries can start the stdio server and inspect its tool schemas. The container reports `MACOS_REQUIRED` for runtime checks; real WeChat reading and sending still require macOS, WeChat Desktop, and Accessibility permission.
 - Codex desktop, CLI, or IDE extension
 - macOS Accessibility permission for the app that runs Codex
+
+The included Dockerfile exists only so MCP registries can start the stdio server and inspect its tool schemas. The container reports `MACOS_REQUIRED` for runtime checks; real WeChat reading and sending still require macOS, WeChat Desktop, and Accessibility permission.
 
 If you can copy and paste four commands, you can install it. See the child-friendly [setup guide](docs/SETUP.md) for every click and permission switch.
 
@@ -70,7 +70,7 @@ Codex → one compact MCP call → local native Accessibility bridge → WeChat
 
 The bridge first asks the native operation to verify and act in one scan. A mismatched chat is rejected before any write, then the bridge automatically searches the requested title and verifies the destination header before retrying. `Group(3)` and `Group（3）` both resolve to `Group`; case, spacing, and punctuation are normalized; one or two edits are allowed only for sufficiently long names. Multiple visible candidates fail as ambiguous. Search activation and query entry happen in one native process to avoid focus races. It tries background control first; when WeChat 4.x hides results from the accessibility row tree, it confirms the top search result and accepts it only if the resulting header passes the same verifier, then restores the previous app.
 
-Only compact JSON returns to Codex. Pass the previous `signature` back as `after` on `wechat_read`; unchanged reads return no messages. Changed reads return the new delta plus up to three lines selected from bounded RAM-only memory by Chinese character bigrams, words, numbers, semantic concepts, rarity, and recency. This lets “多少钱” retrieve an older “价格是 500 元,” and “什么时候能到” retrieve a shipping/date commitment, without sending the whole observed history. Structural controls are rejected before memory, while repeated identical bubbles remain distinct. `wechat_wait` handles one active chat; `wechat_inbox_wait` returns only changed allowlisted previews.
+Only compact JSON returns to Codex. Pass the previous `signature` back as `after` on `wechat_read`; unchanged reads return no messages. Changed reads return the new delta plus up to three lines selected from bounded RAM-only rolling memory and a separate high-signal fact capsule. Chinese bigrams, English words, semantic concepts, exact numbers, rarity, and recency connect “多少钱” to “价格是 500 元” and “什么时候能到” to a shipping/date commitment. If the price later becomes 450, the older conflicting 500 fact is suppressed. The capsule is extractive, not generative: it never invents a summary. Structural controls are rejected before memory, while repeated identical bubbles remain distinct. `wechat_wait` handles one active chat; `wechat_inbox_wait` returns only meaningful allowlisted preview changes.
 
 Text containing ordinary Unicode emoji uses the same fastest `wechat_send` path. `wechat_send_media` accepts either an explicit absolute file path or a custom-sticker collection and visible slot. Search mode takes a short phrase; favorites mode uses a 1-based slot. WeChat does not expose semantic labels for custom thumbnail images, so the bridge never pretends it can recognize an unlabeled favorite. Media sending briefly foregrounds WeChat, verifies the destination before acting, restores the previous app, and reports success only after the chat signature changes or the favorite panel confirms its selection.
 
@@ -80,7 +80,7 @@ The installed skill can run a continuous multi-chat autopilot without screenshot
 
 This is still user-controlled automation: the allowlist, purpose, facts, tone, escalation rules, and proactive authority come from the user. Chat participants cannot expand that authority. Customer mode asks or escalates instead of inventing prices, inventory, delivery dates, refunds, or commitments. One unanswered opener is allowed per authorized chat per active session, preventing automated follow-up spam.
 
-Inbox sensing does not switch conversations. It covers allowlisted chats currently loaded in WeChat's recent sidebar; new messages normally rise into that view. It does not crawl hidden history or WeChat's private database. Opening happens only after an event so Codex can obtain verified context and reply.
+Inbox sensing does not switch conversations. It covers allowlisted chats currently loaded in WeChat's recent sidebar; new messages normally rise into that view. Opening a chat and reducing its unread count does not create a false event; an identical new preview with a higher unread count still does. It does not crawl hidden history or WeChat's private database. Opening happens only after an event so Codex can obtain verified context and reply.
 
 ## Safety and privacy
 
@@ -97,7 +97,7 @@ npm test
 python3 /path/to/skill-creator/scripts/quick_validate.py skill/wechat-computer-use
 ```
 
-The tests cover MCP discovery, normalized/fuzzy names, media confirmation, allowlisted inbox baselines/deltas, own-event suppression, one-call hot paths, bounded search retries, incremental context, token reduction, runtime size, dependency count, and the two-second local text-send budget. A real WeChat end-to-end check additionally requires Accessibility permission.
+Thirty-six tests cover MCP discovery, structured errors, version sync, normalized/fuzzy names, comma-safe previews, media confirmation, allowlisted inbox baselines/deltas, false-event and own-event suppression, one-call hot paths, bounded search retries, rolling context, durable fact retrieval, stale-number suppression, token reduction, runtime size, dependency count, and the two-second local text-send budget. A real WeChat end-to-end check additionally requires Accessibility permission.
 
 ## Cost and distribution
 

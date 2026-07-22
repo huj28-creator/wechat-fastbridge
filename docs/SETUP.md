@@ -20,6 +20,9 @@ npm install
 npm run setup
 ```
 
+You can run `npm run setup` again after an update. It replaces the installed
+FastBridge skill with a clean copy, so deleted or renamed files cannot linger.
+
 If you downloaded the ZIP instead, double-click `install.command` and wait for “Finished.”
 
 If a command shows an error, stop there and copy the error into a GitHub issue. Do not keep guessing.
@@ -62,6 +65,9 @@ You can check installation and permissions without sending anything:
 ```bash
 npm run doctor
 ```
+
+`doctor` also detects an out-of-date installed skill and tells you to rerun
+setup and restart Codex.
 
 ## 4. Use Quiet Mode
 

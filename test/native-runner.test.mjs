@@ -250,6 +250,37 @@ test("smart context connects Chinese synonyms without retransmitting full histor
   assert.ok(JSON.stringify(delta.context).length < JSON.stringify(firstWindow).length);
 });
 
+test("durable fact capsules retain important evidence after the rolling window is evicted", async () => {
+  const initial = ["客服说:项目预算最终确认是5000元", ...Array.from({ length: 7 }, (_, index) => `闲聊:${index}`)];
+  const batches = Array.from({ length: 16 }, (_, batch) => Array.from({ length: 8 }, (_, index) => `普通消息:${batch}-${index}`));
+  const states = [{ ok: true, chat: "long", messages: initial, signature: "s0" }];
+  for (let index = 0; index < batches.length; index += 1) states.push({ ok: true, chat: "long", messages: batches[index], signature: `s${index + 1}` });
+  const last = batches.at(-1);
+  states.push({ ok: true, chat: "long", messages: [...last.slice(1), "客户说:之前确认的预算是多少"], signature: "query" });
+  const bridge = new NativeBridge();
+  bridge.run = async () => states.shift();
+  let result = await bridge.read({ chat: "long", limit: 8 });
+  for (let index = 0; index < batches.length; index += 1) result = await bridge.read({ chat: "long", limit: 8, after: result.signature });
+  const delta = await bridge.read({ chat: "long", limit: 8, after: result.signature, context: 3 });
+  assert.deepEqual(delta.messages, ["客户说:之前确认的预算是多少"]);
+  assert.ok(delta.context.includes("客服说:项目预算最终确认是5000元"), JSON.stringify(delta.context));
+  assert.ok(JSON.stringify(delta.context).length < 1_600);
+});
+
+test("smart context suppresses an older conflicting numeric fact when a newer update exists", async () => {
+  const first = ["客服说:价格是500元", "客服说:今天改为450元", "我说:收到", "客服说:以新价格为准"];
+  const states = [
+    { ok: true, chat: "shop", messages: first, signature: "s1" },
+    { ok: true, chat: "shop", messages: [...first.slice(1), "我说:现在价格是多少"], signature: "s2" },
+  ];
+  const bridge = new NativeBridge();
+  bridge.run = async () => states.shift();
+  const baseline = await bridge.read({ chat: "shop", limit: 4 });
+  const delta = await bridge.read({ chat: "shop", limit: 4, after: baseline.signature, context: 4 });
+  assert.ok(delta.context.includes("客服说:今天改为450元"), JSON.stringify(delta.context));
+  assert.equal(delta.context.includes("客服说:价格是500元"), false, JSON.stringify(delta.context));
+});
+
 test("wait reads its baseline once and returns only the reply delta", async () => {
   const calls = [];
   const states = [
@@ -407,6 +438,33 @@ test("inbox wait returns only changed allowlisted chat events", async () => {
   assert.equal(changed.changed, true);
   assert.deepEqual(changed.events.map((event) => event.chat), ["Customer A"]);
   assert.equal(changed.events[0].preview, "new question");
+});
+
+test("inbox wait ignores unread decreases caused by opening a chat", async () => {
+  const states = [
+    { ok: true, chats: [{ chat: "Customer", preview: "same", unread: 2, signature: "c1" }], signature: "i1" },
+    { ok: true, chats: [{ chat: "Customer", preview: "same", unread: 0, signature: "c2" }], signature: "i2" },
+  ];
+  const bridge = new NativeBridge();
+  bridge.run = async () => states.shift();
+  const baseline = await bridge.inboxWait({ chats: ["Customer"], timeoutMs: 0 });
+  const unchanged = await bridge.inboxWait({ chats: ["Customer"], after: baseline.signature, timeoutMs: 0 });
+  assert.equal(unchanged.changed, false);
+  assert.deepEqual(unchanged.events, undefined);
+  assert.equal(unchanged.signature, "i2");
+});
+
+test("inbox wait detects a repeated preview when unread count increases", async () => {
+  const states = [
+    { ok: true, chats: [{ chat: "Customer", preview: "ok", unread: 0, signature: "c1" }], signature: "i1" },
+    { ok: true, chats: [{ chat: "Customer", preview: "ok", unread: 1, signature: "c2" }], signature: "i2" },
+  ];
+  const bridge = new NativeBridge();
+  bridge.run = async () => states.shift();
+  const baseline = await bridge.inboxWait({ chats: ["Customer"], timeoutMs: 0 });
+  const changed = await bridge.inboxWait({ chats: ["Customer"], after: baseline.signature, timeoutMs: 0 });
+  assert.equal(changed.changed, true);
+  assert.deepEqual(changed.events.map((event) => event.preview), ["ok"]);
 });
 
 test("inbox wait suppresses own-send previews before surfacing a reply", async () => {

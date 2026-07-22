@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync } from "node:child_process";
-import { accessSync, constants, existsSync } from "node:fs";
+import { accessSync, constants, existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -39,8 +39,10 @@ try {
 }
 
 const installedSkill = resolve(homedir(), ".codex/skills/wechat-computer-use/SKILL.md");
-if (existsSync(installedSkill)) pass("Codex skill is installed");
-else fail("Codex skill is missing", "Run `npm run setup`.");
+const sourceSkill = resolve(root, "skill/wechat-computer-use/SKILL.md");
+if (!existsSync(installedSkill)) fail("Codex skill is missing", "Run `npm run setup`.");
+else if (readFileSync(installedSkill, "utf8") === readFileSync(sourceSkill, "utf8")) pass("Codex skill is installed and current");
+else fail("Codex skill is stale", "Run `npm run setup`, then restart Codex.");
 
 if (process.platform === "darwin" && existsSync(binary)) {
   const wechatRunning = () => {

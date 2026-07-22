@@ -22,12 +22,12 @@ The bridge opens the requested chat automatically, tolerates a small typo, ignor
 ## Read, answer, continue
 
 1. Read 4–8 messages before sending. Pass the returned `signature` as `after` on later reads.
-2. Trust the default smart context: it combines recent continuity with older relevant facts using words, Chinese bigrams, concepts, numbers, rarity, and recency. Use `context: 4` for complex commitments and `0` only when history cannot matter.
+2. Trust the default smart context: it combines recent continuity with older relevant facts using words, Chinese bigrams, concepts, numbers, rarity, and recency. A bounded fact capsule keeps high-signal prices, dates, addresses, orders, contacts, and confirmed decisions after ordinary chat scrolls out; newer conflicting numbers suppress stale ones. Use `context: 4` for complex commitments and `0` only when history cannot matter.
 3. Answer only the current delta and relevant evidence. Do not revive stale topics.
 4. Send immediately after deciding. Confirm text only when `inputCleared` is true; confirm media only when `deliveryConfirmed` is true.
 5. Save returned signatures. Unchanged reads return no messages, so do not request the full history again.
 
-Memory is bounded and RAM-only. After a restart, perform one larger initial read to rebuild context.
+Memory is bounded and RAM-only. After a restart, perform one larger initial read to rebuild context. Tool failures return compact `{ok:false,error,detail}` data; resolve the named cause before retrying and never blindly retry a send.
 
 ## Emoji, stickers, files
 
@@ -40,7 +40,7 @@ Memory is bounded and RAM-only. After a restart, perform one larger initial read
 For “keep monitoring/replying,” define the chat allowlist, goal/tone, approved facts, escalation rules, and proactive authority. Then:
 
 1. Call `wechat_inbox_wait` with `timeoutMs: 0` for a baseline signature.
-2. Repeat with `after` and `timeoutMs: 55000`; unchanged scanning happens locally.
+2. Repeat with `after` and `timeoutMs: 55000`; unchanged scanning happens locally. Opening a chat and clearing unread state is ignored, while a repeated preview with a higher unread count still triggers an event.
 3. For each event, read only that chat, answer its delta, send once, and resume waiting.
 
 Continue until stopped, cancelled, verification fails, or escalation is required. Start conversations only with explicit authority; send at most one unanswered opener per chat. Never invent prices, stock, delivery dates, refunds, policy, or commitments. See [references/live-autopilot.md](references/live-autopilot.md).

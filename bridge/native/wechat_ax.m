@@ -200,8 +200,7 @@ static NSDictionary *InboxEntry(NSArray<NSString *> *strings, BOOL selected) {
         NSRange separator = [value rangeOfString:@","];
         if (separator.location != NSNotFound) {
             title = [[value substringToIndex:separator.location] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-            NSArray<NSString *> *parts = [value componentsSeparatedByString:@","];
-            if (parts.count > 1) preview = [parts[1] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+            preview = [[value substringFromIndex:separator.location + 1] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
             break;
         }
     }
@@ -345,6 +344,12 @@ int main(int argc, const char *argv[]) {
                     @"requested": requestedNormalized, @"candidate": candidateNormalized,
                     @"distance": @(ChatNameDistance(requestedNormalized, candidateNormalized)),
                     @"latencyMs": @(-started.timeIntervalSinceNow * 1000) }, stdout);
+            return 0;
+        }
+        if ([command isEqualToString:@"parse-inbox"]) {
+            NSDictionary *entry = InboxEntry(Options(args, @"--value"), NO);
+            if (!entry) Fail(@"INBOX_ENTRY_INVALID", @"Pass at least one visible row value");
+            Emit(entry, stdout);
             return 0;
         }
         if (!AXIsProcessTrusted()) Fail(@"ACCESSIBILITY_PERMISSION_REQUIRED", @"Enable Accessibility for Codex or Terminal");

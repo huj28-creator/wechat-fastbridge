@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync } from "node:child_process";
-import { chmodSync, cpSync, existsSync, mkdirSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -39,10 +39,12 @@ execFileSync("codex", ["mcp", "add", "wechat-fastbridge", "--", process.execPath
 
 const skillsDir = resolve(homedir(), ".codex/skills");
 mkdirSync(skillsDir, { recursive: true });
-cpSync(resolve(root, "skill/wechat-computer-use"), resolve(skillsDir, "wechat-computer-use"), {
+const installedSkill = resolve(skillsDir, "wechat-computer-use");
+rmSync(installedSkill, { recursive: true, force: true });
+cpSync(resolve(root, "skill/wechat-computer-use"), installedSkill, {
   recursive: true,
   force: true,
 });
 
-console.log("Done. The MCP server and skill are installed.");
+console.log("Done. The MCP server and a clean, current skill copy are installed.");
 console.log("Next: grant Accessibility permission, restart Codex, open WeChat, then run `npm run doctor`.");

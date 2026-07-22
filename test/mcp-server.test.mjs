@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmod, mkdtemp, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -38,7 +38,16 @@ test("MCP server exposes the fast semantic WeChat tools", async () => {
     assert.equal(inbox.structuredContent.changed, false);
     assert.equal(inbox.structuredContent.signature, "abc123");
     assert.ok(Number.isFinite(inbox.structuredContent.ms));
+    const invalid = await client.callTool({ name: "wechat_send_media", arguments: { chat: "lab", kind: "file" } });
+    assert.deepEqual(invalid.structuredContent, { ok: false, error: "FILE_PATH_REQUIRED" });
+    assert.ok(JSON.stringify(invalid).length < 300);
   } finally {
     await transport.close();
   }
+});
+
+test("package and MCP server versions stay synchronized", async () => {
+  const manifest = JSON.parse(await readFile("package.json", "utf8"));
+  const source = await readFile("bridge/server.mjs", "utf8");
+  assert.match(source, new RegExp(`version: "${manifest.version.replaceAll(".", "\\.")}"`));
 });

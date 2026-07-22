@@ -2,7 +2,7 @@
 
 ## Install FastBridge
 
-1. Clone the public repository and run `npm install` followed by `npm run setup`.
+1. Clone the public repository and run `npm install` followed by `npm run setup`. Re-running setup replaces the installed skill folder cleanly, so removed or renamed files cannot remain stale.
 2. Copy `skill/wechat-computer-use` into `~/.codex/skills/`.
 3. Restart Codex so it discovers the STDIO MCP server.
 4. Open WeChat and grant Accessibility permission to Codex or the terminal host in System Settings → Privacy & Security → Accessibility.

@@ -6,7 +6,7 @@ const execFileAsync = promisify(execFile);
 const defaultBinary = new URL("./native/wechat-ax", import.meta.url).pathname;
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const semanticConcepts = [
-  ["@money", /价格|价钱|费用|预算|报价|金额|付款|支付|退款|多少钱|贵|便宜|price|cost|budget|quote|pay|refund/iu],
+  ["@money", /价格|价钱|费用|预算|报价|金额|付款|支付|退款|多少钱|贵|便宜|\d+(?:[.,]\d+)?\s*(?:元|块|人民币|美元|usd|rmb|¥|￥)|price|cost|budget|quote|pay|refund/iu],
   ["@time", /时间|日期|几号|几点|何时|什么时候|今天|明天|周[一二三四五六日天]|星期|截止|多久|time|date|when|today|tomorrow|deadline/iu],
   ["@delivery", /发货|到货|送达|快递|物流|配送|交付|shipping|ship|deliver|courier|tracking/iu],
   ["@place", /地址|地点|位置|哪里|哪儿|在哪|门店|address|location|where|store/iu],
@@ -15,6 +15,7 @@ const semanticConcepts = [
   ["@decision", /确认|决定|同意|拒绝|可以吗|行不行|是否|选择|confirm|decide|agree|reject|choose/iu],
   ["@preference", /喜欢|偏好|想要|颜色|尺寸|款式|prefer|like|want|color|size|style/iu],
   ["@problem", /问题|错误|失败|坏了|不能|无法|异常|投诉|problem|error|fail|broken|issue|complaint/iu],
+  ["@order", /订单|单号|合同|发票|订单号|order|invoice|contract/iu],
 ];
 const semanticTerms = (value) => {
   const text = String(value || "").normalize("NFKC").toLocaleLowerCase();
@@ -25,6 +26,19 @@ const semanticTerms = (value) => {
   }
   for (const [concept, pattern] of semanticConcepts) if (pattern.test(text)) terms.add(concept);
   return terms;
+};
+const durableFactScore = (message) => {
+  const text = String(message || "");
+  const terms = semanticTerms(text);
+  let score = [...terms].filter((term) => term.startsWith("@")).length;
+  if ([...terms].some((term) => /^\d/.test(term))) score += 2;
+  if (/确认|确定|决定|最终|改为|更新为|承诺|地址|联系人|单号|截止|confirmed?|decided?|final|changed? to|updated? to|promise|address|contact|deadline/iu.test(text)) score += 2;
+  if (/https?:\/\/|[\w.+-]+@[\w.-]+\.[a-z]{2,}/iu.test(text)) score += 2;
+  return score;
+};
+const uniqueLatest = (messages) => {
+  const last = new Map(messages.map((message, index) => [message, index]));
+  return messages.filter((message, index) => last.get(message) === index);
 };
 const appendWindow = (history, window) => {
   let overlap = Math.min(history.length, window.length);
@@ -235,35 +249,74 @@ export class NativeBridge {
     history.push({ signature: result.signature, limit, messages: [...result.messages] });
     const memory = appendWindow(cached.memory ?? [], result.messages);
     while (memory.length > 120 || memory.reduce((sum, message) => sum + message.length, 0) > 24_000) memory.shift();
+    const facts = [...(cached.facts ?? [])];
+    for (const message of result.messages) {
+      if (durableFactScore(message) < 3) continue;
+      const existing = facts.indexOf(message);
+      if (existing >= 0) facts.splice(existing, 1);
+      facts.push(message);
+    }
+    while (facts.length > 40 || facts.reduce((sum, message) => sum + message.length, 0) > 8_000) facts.shift();
     this.snapshots.delete(result.chat);
-    this.snapshots.set(result.chat, { history: history.slice(-4), memory });
+    this.snapshots.set(result.chat, { history: history.slice(-4), memory, facts });
     while (this.snapshots.size > 8) this.snapshots.delete(this.snapshots.keys().next().value);
   }
 
   #smartContext(chat, query, count = 3, immediate = []) {
     const wanted = Math.max(0, Math.min(4, count));
     if (!wanted) return [];
-    const memory = appendWindow(this.snapshots.get(chat)?.memory ?? [], immediate);
+    const cached = this.snapshots.get(chat) ?? {};
+    const memory = appendWindow(cached.memory ?? [], immediate);
+    const evidence = uniqueLatest([...(cached.facts ?? []), ...memory]);
     const querySet = new Set(query.flatMap((message) => [...semanticTerms(message)]));
+    const queryConcepts = new Set([...querySet].filter((term) => term.startsWith("@")));
     const queryMessages = new Set(query);
-    const candidates = memory.map((message, index) => ({ message, index })).filter(({ message }) => !queryMessages.has(message));
+    const candidates = evidence.map((message, index) => ({ message, index, terms: semanticTerms(message) })).filter(({ message }) => !queryMessages.has(message));
     if (!candidates.length) return [];
-    const selected = new Set([candidates.at(-1).index]);
-    const candidateTerms = candidates.map(({ message }) => semanticTerms(message));
+    const selected = new Map([[candidates.at(-1).index, candidates.at(-1)]]);
     const frequency = new Map();
-    for (const terms of candidateTerms) for (const term of terms) frequency.set(term, (frequency.get(term) ?? 0) + 1);
-    const ranked = candidates.slice(0, -1).map((candidate, candidateIndex) => {
+    for (const { terms } of candidates) for (const term of terms) frequency.set(term, (frequency.get(term) ?? 0) + 1);
+    const ranked = candidates.slice(0, -1).map((candidate) => {
       let score = 0;
-      for (const term of candidateTerms[candidateIndex]) {
+      let matches = 0;
+      for (const term of candidate.terms) {
         if (!querySet.has(term)) continue;
+        matches += 1;
         const rarity = Math.log1p(candidates.length / (frequency.get(term) ?? 1));
         const weight = term.startsWith("@") || /^\d/.test(term) ? 4 : /^[a-z]/.test(term) ? 3 : 2;
         score += weight * rarity;
       }
-      return { ...candidate, score: score + candidate.index / Math.max(1, memory.length) };
+      if (matches) score += Math.min(2, durableFactScore(candidate.message) / 3);
+      return { ...candidate, score: score + candidate.index / Math.max(1, evidence.length) };
     }).sort((left, right) => right.score - left.score || right.index - left.index);
-    for (const candidate of ranked) if (selected.size < wanted && candidate.score >= 1) selected.add(candidate.index);
-    for (let index = candidates.length - 2; index >= 0 && selected.size < wanted; index -= 1) selected.add(candidates[index].index);
+    const conflictsWithNewer = (candidate) => {
+      const relevant = new Set([...candidate.terms].filter((term) => queryConcepts.has(term)));
+      const numbers = new Set([...candidate.terms].filter((term) => /^\d/.test(term)));
+      if (!relevant.size || !numbers.size) return false;
+      for (const newer of selected.values()) {
+        if (newer.index <= candidate.index) continue;
+        const newerRelevant = new Set([...newer.terms].filter((term) => queryConcepts.has(term)));
+        if (![...relevant].every((term) => newerRelevant.has(term))) continue;
+        const newerNumbers = [...newer.terms].filter((term) => /^\d/.test(term));
+        if (newerNumbers.length && !newerNumbers.some((term) => numbers.has(term))) return true;
+      }
+      return false;
+    };
+    const addCandidate = (candidate) => {
+      const candidateRelevant = new Set([...candidate.terms].filter((term) => queryConcepts.has(term)));
+      const candidateNumbers = new Set([...candidate.terms].filter((term) => /^\d/.test(term)));
+      if (candidateRelevant.size && candidateNumbers.size) for (const [index, older] of selected) {
+        if (index >= candidate.index) continue;
+        const olderRelevant = new Set([...older.terms].filter((term) => queryConcepts.has(term)));
+        const olderNumbers = [...older.terms].filter((term) => /^\d/.test(term));
+        if (olderRelevant.size && [...olderRelevant].every((term) => candidateRelevant.has(term)) &&
+            olderNumbers.length && !olderNumbers.some((term) => candidateNumbers.has(term))) selected.delete(index);
+      }
+      if (selected.size >= wanted || conflictsWithNewer(candidate)) return;
+      selected.set(candidate.index, candidate);
+    };
+    for (const candidate of ranked) if (candidate.score >= 1) addCandidate(candidate);
+    for (let index = candidates.length - 2; index >= 0 && selected.size < wanted; index -= 1) addCandidate(candidates[index]);
     const ordered = candidates.filter(({ index }) => selected.has(index)).map(({ message }) => message);
     const recent = candidates.at(-1).message;
     if (recent.length >= 1_600) return [recent];
@@ -296,10 +349,14 @@ export class NativeBridge {
       projected.delta = true;
     } else {
       const previous = this.inboxSnapshots.get(key)?.history.find((item) => item.signature === after);
-      projected.changed = true;
       if (previous) {
-        const old = new Map(previous.chats.map((entry) => [normalizeChat(entry.chat), entry.signature]));
-        projected.events = result.chats.filter((entry) => old.get(normalizeChat(entry.chat)) !== entry.signature);
+        const old = new Map(previous.chats.map((entry) => [normalizeChat(entry.chat), entry]));
+        projected.events = result.chats.filter((entry) => {
+          const before = old.get(normalizeChat(entry.chat));
+          if (!before) return true;
+          return before.preview !== entry.preview || Number(entry.unread || 0) > Number(before.unread || 0);
+        });
+        projected.changed = projected.events.length > 0;
         projected.delta = true;
       } else {
         projected.resynced = true;

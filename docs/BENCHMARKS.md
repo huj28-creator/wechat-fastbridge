@@ -1,8 +1,8 @@
 # Benchmarks
 
-## Version 1.6 algorithm gates
+## Version 1.7 algorithm gates
 
-The v1.6 hot path combines verified routing, allowlisted inbox events, compact media, adaptive polling, cached sticker geometry, and bounded concept-aware chat memory. Unchanged scans and unrelated titles are discarded before returning to Codex.
+The v1.7 hot path combines verified routing, allowlisted semantic inbox events, compact structured errors, compact media, adaptive polling, cached sticker geometry, bounded rolling memory, and an extractive high-signal fact capsule. Unchanged scans, unread decreases, stale conflicting facts, and unrelated titles are discarded before returning to Codex.
 
 | Gate | v1.0 path | v1.6 path |
 | --- | ---: | ---: |
@@ -13,7 +13,7 @@ The v1.6 hot path combines verified routing, allowlisted inbox events, compact m
 | Changed repeated-read payload | full window | new delta + 0–4 context lines |
 | Representative 1-new-message compact payload | full 8-message result | 43.8% fewer JSON characters with 2 context lines |
 | Wait immediately after send | may return own send | re-baselines on own send, returns reply |
-| Cached context bound | none | 120 messages/24 KB × 8 chats, RAM-only |
+| Cached context bound | none | 120 messages/24 KB + 40 facts/8 KB × 8 chats, RAM-only |
 | Runtime footprint gate | none | <288 KiB |
 | Production dependency ceiling | none | 2 |
 | Chat-name resolver | exact text | ignores member counts/formatting; bounded typo distance |
@@ -22,12 +22,17 @@ The v1.6 hot path combines verified routing, allowlisted inbox events, compact m
 | Unchanged inbox payload | n/a | zero events |
 | File/sticker context input | screenshots / accessibility dump | explicit path or query/slot only |
 | MCP tool-definition characters | n/a | 2,849 (49% below 5,624; 21% below v1.5) |
-| Triggered skill instructions | n/a | 3,472 bytes |
+| Triggered skill instructions | n/a | 3,924 bytes |
 | Rolling conversation memory | none | 120 messages/24 KB × 8 chats, RAM-only |
-| Delta context | last lines only | recent continuity + concept/rarity-ranked relevant facts |
+| Durable fact capsule | none | 40 high-signal source messages/8 KB × 8 chats, RAM-only |
+| Delta context | last lines only | recent continuity + concept/rarity-ranked facts + stale-number suppression |
+| Unread decrease after opening chat | false event | ignored locally |
+| Repeated preview with unread increase | may be missed | emitted as an event |
+| English preview containing commas | truncated | preserved |
+| Runtime tool failures | protocol exception | compact structured error |
 | UI controls / duplicate bubbles | mixed / collapsed | controls excluded / duplicates preserved |
 
-The one-call behavior, target-mismatch fallback, transient search-result retry, unchanged suppression, delta overlap, limit-change fallback, self-send suppression, and context bound are automated tests. Based on the separately measured 499 ms native send and 465 ms native snapshot below, removing the preceding scan should save roughly one native-process round trip on an already-selected chat. That is a component estimate, not a new end-to-end claim; real UI timings still vary with WeChat state and user activity.
+The one-call behavior, target-mismatch fallback, transient search-result retry, unchanged suppression, delta overlap, limit-change fallback, self-send suppression, durable fact retrieval after more than 120 observed messages, stale-number suppression, unread-change handling, comma-safe previews, and all memory bounds are automated tests. Based on the separately measured 499 ms native send and 465 ms native snapshot below, removing the preceding scan should save roughly one native-process round trip on an already-selected chat. That is a component estimate, not a new end-to-end claim; real UI timings still vary with WeChat state and user activity.
 
 ## Real WeChat test
 
@@ -71,7 +76,7 @@ The original text-send benchmark used `autoSelect: true`, verified the already-s
 ## Automated gates
 
 - MCP server exposes only compact semantic tools.
-- Twenty-nine tests cover MCP discovery/schema budgets, synonym-aware smart context, normalized/fuzzy names, confirmed media and geometry reuse, compact native round trips, allowlisted inbox deltas, own-event suppression, recovery, runtime size, dependencies, token reduction, and wrong-chat rejection.
+- Thirty-six tests cover MCP discovery/schema budgets, structured errors, version sync, synonym-aware and durable smart context, stale-number suppression, normalized/fuzzy names, comma-safe previews, confirmed media and geometry reuse, compact native round trips, meaningful allowlisted inbox deltas, false/own-event suppression, recovery, runtime size, dependencies, token reduction, and wrong-chat rejection.
 - Compact Computer Use fallback removes at least 80% of representative UI-tree characters.
 - Exact-chat mismatch prevents writes.
 - Skill passes the standard Codex skill validator.
