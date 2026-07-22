@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>WeChat FastBridge — Launch Film</title>
+  <style>
+    :root { color-scheme: dark; --green:#07c160; --ink:#07110c; --white:#f6fff9; --muted:#90aa9b; }
+    * { box-sizing:border-box; }
+    html,body { width:100%; height:100%; margin:0; overflow:hidden; background:var(--ink); }
+    body { font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    #film { position:relative; width:1920px; height:1080px; overflow:hidden; background:#07110c; }
+    .aurora { position:absolute; inset:-35%; background:radial-gradient(circle at 44% 40%,rgba(7,193,96,.23),transparent 28%),radial-gradient(circle at 70% 70%,rgba(0,255,160,.09),transparent 30%); filter:blur(45px); }
+    .grid { position:absolute; inset:0; opacity:.13; background-image:linear-gradient(rgba(124,255,189,.16) 1px,transparent 1px),linear-gradient(90deg,rgba(124,255,189,.16) 1px,transparent 1px); background-size:64px 64px; mask-image:linear-gradient(to bottom,transparent,#000 24%,#000 75%,transparent); }
+    .grain { position:absolute; inset:0; opacity:.055; background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.65'/%3E%3C/svg%3E"); mix-blend-mode:screen; }
+    .topbar { position:absolute; z-index:20; top:54px; left:70px; right:70px; display:flex; justify-content:space-between; align-items:center; font:700 20px/1 ui-monospace,SFMono-Regular,Menlo,monospace; letter-spacing:.13em; color:#b8d3c2; }
+    .brand { display:flex; align-items:center; gap:16px; }
+    .mark { width:42px; height:42px; border:2px solid var(--green); border-radius:13px; display:grid; place-items:center; color:var(--green); box-shadow:0 0 24px rgba(7,193,96,.25); font-weight:900; }
+    .status { display:flex; align-items:center; gap:12px; }
+    .dot { width:10px; height:10px; background:var(--green); border-radius:50%; box-shadow:0 0 18px var(--green); }
+    .scene { position:absolute; inset:0; opacity:0; pointer-events:none; }
+    .eyebrow { font:700 22px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace; letter-spacing:.18em; text-transform:uppercase; color:var(--green); }
+    h1,h2,p { margin:0; }
+    .hero { left:150px; top:270px; width:1500px; position:absolute; }
+    .hero h1 { margin-top:28px; font-size:126px; line-height:.9; letter-spacing:-.065em; color:var(--white); max-width:1500px; }
+    .hero h1 em { font-style:normal; color:var(--green); }
+    .hero p { margin-top:42px; font-size:32px; letter-spacing:-.02em; color:#b8d3c2; }
+    .hero-line { width:0; height:4px; margin-top:56px; background:linear-gradient(90deg,var(--green),transparent); }
+    .orbit { position:absolute; width:460px; height:460px; right:110px; top:265px; border:1px solid rgba(132,255,193,.3); border-radius:50%; }
+    .orbit:before,.orbit:after { content:""; position:absolute; inset:55px; border:1px dashed rgba(132,255,193,.25); border-radius:50%; }
+    .orbit:after { inset:145px; border-style:solid; box-shadow:0 0 80px rgba(7,193,96,.25) inset; }
+    .orbit-node { position:absolute; width:20px; height:20px; border-radius:50%; background:var(--green); top:42px; left:90px; box-shadow:0 0 30px var(--green); }
+    .proof-layout { position:absolute; inset:165px 110px 95px 110px; display:grid; grid-template-columns:1.02fr .98fr; gap:70px; align-items:center; }
+    .wechat-card { height:690px; border:1px solid rgba(183,255,217,.25); border-radius:34px; overflow:hidden; background:rgba(241,247,243,.98); box-shadow:0 40px 120px rgba(0,0,0,.38); color:#17231c; }
+    .window-chrome { height:58px; background:#eef3ef; display:flex; align-items:center; gap:10px; padding:0 22px; border-bottom:1px solid #d9e2dc; }
+    .window-chrome i { display:block; width:13px; height:13px; border-radius:50%; background:#c8d1cb; }
+    .window-chrome i:nth-child(1){background:#ff645f}.window-chrome i:nth-child(2){background:#ffbd45}.window-chrome i:nth-child(3){background:#28c940}
+    .contact-shot { height:152px; background:#d7d7d7 url('./assets/jerry-chat.png') center/cover no-repeat; border-bottom:1px solid #c9d0cb; }
+    .chat-area { position:relative; height:480px; padding:40px; background:linear-gradient(145deg,#edf2ee,#e5ebe7); }
+    .bubble { position:absolute; right:42px; top:105px; padding:24px 30px; border-radius:22px 8px 22px 22px; background:var(--green); color:white; font-size:28px; font-weight:650; box-shadow:0 18px 40px rgba(7,193,96,.24); white-space:nowrap; overflow:hidden; max-width:0; }
+    .cursor { display:inline-block; width:2px; height:30px; background:#fff; margin-left:3px; vertical-align:-4px; }
+    .verify { position:absolute; left:38px; bottom:36px; display:flex; align-items:center; gap:12px; color:#2d4938; font:700 17px/1 ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .verify .check { width:28px; height:28px; border-radius:9px; background:#d2f5df; color:#067a3a; display:grid; place-items:center; }
+    .metric-stack { display:flex; flex-direction:column; gap:30px; }
+    .metric-stack h2 { color:var(--white); font-size:72px; line-height:.96; letter-spacing:-.055em; }
+    .metric-stack p { color:#a8c0b0; font-size:25px; line-height:1.5; max-width:630px; }
+    .timer { display:flex; align-items:baseline; gap:14px; margin-top:18px; }
+    .timer strong { font:800 116px/.85 ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--green); letter-spacing:-.08em; }
+    .timer span { color:#c2d8ca; font-size:26px; font-weight:700; }
+    .micro { font:700 16px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace; color:#6d8b79; letter-spacing:.1em; text-transform:uppercase; }
+    .pipeline { position:absolute; inset:175px 90px 100px; }
+    .pipeline h2 { font-size:76px; color:var(--white); letter-spacing:-.055em; text-align:center; }
+    .pipeline-sub { margin-top:18px; color:#9cb4a5; text-align:center; font-size:25px; }
+    .nodes { margin-top:125px; display:grid; grid-template-columns:repeat(4,1fr); gap:55px; align-items:center; }
+    .node { position:relative; height:220px; padding:34px; background:rgba(10,27,18,.82); border:1px solid rgba(145,255,199,.22); border-radius:26px; box-shadow:0 28px 70px rgba(0,0,0,.24); }
+    .node-num { font:700 16px/1 ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--green); letter-spacing:.12em; }
+    .node h3 { margin:30px 0 12px; color:#f4fff8; font-size:32px; letter-spacing:-.035em; }
+    .node p { color:#809d8a; font-size:18px; line-height:1.4; }
+    .node:not(:last-child):after { content:""; position:absolute; left:calc(100% + 12px); top:50%; width:32px; height:2px; background:var(--green); box-shadow:0 0 18px var(--green); }
+    .compression { margin:100px auto 0; max-width:1180px; display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:34px; }
+    .data-box { padding:25px 30px; border-radius:20px; border:1px solid rgba(152,255,203,.16); background:#0a1a12; }
+    .data-box b { display:block; color:#f4fff8; font:800 40px/1 ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .data-box small { display:block; margin-top:11px; color:#789482; font-size:17px; }
+    .save { color:var(--green); font:900 42px/1 ui-monospace,SFMono-Regular,Menlo,monospace; text-align:center; }
+    .quiet-layout { position:absolute; inset:175px 120px 90px; display:grid; grid-template-columns:1fr 1fr; gap:110px; align-items:center; }
+    .quiet-copy h2 { margin-top:24px; color:var(--white); font-size:94px; line-height:.92; letter-spacing:-.065em; }
+    .quiet-copy p { margin-top:38px; color:#9fb7a7; font-size:27px; line-height:1.5; max-width:650px; }
+    .feature-list { margin-top:45px; display:flex; flex-wrap:wrap; gap:14px; }
+    .feature { padding:12px 18px; border:1px solid rgba(135,255,194,.24); border-radius:999px; color:#c7dacf; font:700 16px/1 ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .desktop { position:relative; width:760px; height:560px; }
+    .screen { position:absolute; width:625px; height:410px; border-radius:26px; border:1px solid rgba(188,255,222,.3); background:linear-gradient(150deg,#15231b,#0b140f); box-shadow:0 45px 100px rgba(0,0,0,.5); overflow:hidden; }
+    .screen.back { left:100px; top:20px; transform:rotate(4deg); opacity:.52; }
+    .screen.front { left:15px; top:110px; background:#f0f4f1; color:#18211b; }
+    .fake-code { padding:35px; font:600 20px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace; color:#96b4a1; }
+    .fake-code .g { color:var(--green); }
+    .quiet-badge { position:absolute; right:0; top:0; width:230px; height:230px; border-radius:50%; display:grid; place-items:center; background:var(--green); color:#03180d; box-shadow:0 0 0 18px rgba(7,193,96,.09),0 0 100px rgba(7,193,96,.4); }
+    .quiet-badge b { font-size:90px; }
+    .quiet-badge span { position:absolute; bottom:47px; font:900 14px/1 ui-monospace,SFMono-Regular,Menlo,monospace; letter-spacing:.1em; }
+    .final { position:absolute; inset:0; display:grid; place-items:center; text-align:center; }
+    .final-inner { margin-top:20px; }
+    .final-logo { width:116px; height:116px; margin:0 auto 34px; border-radius:34px; border:3px solid var(--green); display:grid; place-items:center; color:var(--green); font-size:58px; font-weight:900; box-shadow:0 0 80px rgba(7,193,96,.3); }
+    .final h2 { color:var(--white); font-size:112px; line-height:.95; letter-spacing:-.07em; }
+    .final h2 em { color:var(--green); font-style:normal; }
+    .final p { margin-top:32px; color:#a9c1b1; font-size:26px; }
+    .repo { margin:50px auto 0; display:inline-flex; align-items:center; gap:18px; padding:20px 30px; border-radius:18px; background:#f3fff7; color:#07110c; font:800 22px/1 ui-monospace,SFMono-Regular,Menlo,monospace; box-shadow:0 22px 70px rgba(7,193,96,.2); }
+    .repo .gh { width:30px; height:30px; border-radius:50%; background:#07110c; color:white; display:grid; place-items:center; font-size:15px; }
+    .footer-pills { margin-top:34px; display:flex; justify-content:center; gap:16px; color:#759080; font:700 15px/1 ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .footer-pills span { padding:10px 14px; border:1px solid rgba(139,255,196,.16); border-radius:99px; }
+  </style>
+</head>
+<body>
+<main id="film">
+  <div class="aurora" id="aurora"></div><div class="grid"></div><div class="grain"></div>
+  <div class="topbar"><div class="brand"><div class="mark">C</div>WECHAT FASTBRIDGE</div><div class="status"><span class="dot"></span>LOCAL / READY</div></div>
+
+  <section class="scene" id="s1">
+    <div class="hero"><div class="eyebrow">Codex × WeChat / zero cloud relay</div><h1>Messages move.<br><em>Your flow stays yours.</em></h1><p>A native, token-efficient bridge for macOS WeChat.</p><div class="hero-line" id="heroLine"></div></div>
+    <div class="orbit" id="orbit"><div class="orbit-node"></div></div>
+  </section>
+
+  <section class="scene" id="s2">
+    <div class="proof-layout">
+      <div class="wechat-card" id="wechatCard"><div class="window-chrome"><i></i><i></i><i></i></div><div class="contact-shot"></div><div class="chat-area"><div class="bubble" id="bubble">FastBridge optimized final test<span class="cursor"></span></div><div class="verify"><span class="check">✓</span>EXACT CHAT VERIFIED · JERRY</div></div></div>
+      <div class="metric-stack"><div class="eyebrow">Real device test</div><h2>One command.<br>One verified send.</h2><div class="timer"><strong id="timer">0.00</strong><span>seconds</span></div><p>Input cleared. Delivery confirmed. Exactly one matching message.</p><div class="micro">1,252.7 ms command-to-result · macOS · 2026-07-22</div></div>
+    </div>
+  </section>
+
+  <section class="scene" id="s3">
+    <div class="pipeline"><div class="eyebrow" style="text-align:center">The compact path</div><h2>Less UI. More intent.</h2><p class="pipeline-sub">Codex gets semantic messages — not a wall of accessibility text.</p>
+      <div class="nodes" id="nodes"><div class="node"><div class="node-num">01</div><h3>Codex</h3><p>Understands your command</p></div><div class="node"><div class="node-num">02</div><h3>Compact MCP</h3><p>Four semantic tools</p></div><div class="node"><div class="node-num">03</div><h3>Native AX</h3><p>Exact-chat verification</p></div><div class="node"><div class="node-num">04</div><h3>WeChat</h3><p>Read · wait · send</p></div></div>
+      <div class="compression"><div class="data-box"><b>13,852</b><small>real diagnostic characters</small></div><div class="save">−97.9%</div><div class="data-box"><b>296</b><small>compact 8-message result</small></div></div>
+    </div>
+  </section>
+
+  <section class="scene" id="s4">
+    <div class="quiet-layout"><div class="quiet-copy"><div class="eyebrow">Automatic exact selection</div><h2>No manual<br>chat hunt.</h2><p>FastBridge searches the exact title itself. It stays in the background when possible, briefly focuses only when WeChat requires it, then restores your work.</p><div class="feature-list"><span class="feature">LOCAL ONLY</span><span class="feature">MIT LICENSE</span><span class="feature">NO API KEY</span><span class="feature">NO APP STORE</span></div></div>
+      <div class="desktop" id="desktop"><div class="screen back"></div><div class="screen front"><div class="window-chrome"><i></i><i></i><i></i></div><div class="fake-code"><span class="g">wechat_read</span>({ chat: "Jerry" })<br>→ 4 messages · 1.385 s<br><br><span class="g">wechat_wait</span>({ after: signature })<br>→ unchanged state suppressed<br><br><span class="g">wechat_send</span>({ chat: "Jerry" })<br>→ exact target verified</div></div><div class="quiet-badge" id="quietBadge"><b>↩</b><span>AUTO RESTORE</span></div></div>
+    </div>
+  </section>
+
+  <section class="scene" id="s5"><div class="final"><div class="final-inner"><div class="final-logo">C</div><div class="eyebrow">Free · local · open source</div><h2>WeChat at<br><em>Codex speed.</em></h2><p>Install in minutes. Read and send in seconds.</p><div class="repo"><span class="gh">GH</span>github.com/huj28-creator/wechat-fastbridge</div><div class="footer-pills"><span>macOS</span><span>Intel + Apple Silicon</span><span>MIT</span></div></div></div></section>
+</main>
+<script>
+  const $ = (id) => document.getElementById(id);
+  const clamp = (v,a=0,b=1) => Math.max(a,Math.min(b,v));
+  const smooth = (v) => { v=clamp(v); return v*v*(3-2*v); };
+  const range = (t,a,b) => smooth((t-a)/(b-a));
+  const sceneOpacity = (t,a,b,fade=.38) => Math.min(range(t,a,a+fade),1-range(t,b-fade,b));
+  const move = (el,x,y,s=1) => { el.style.transform=`translate(${x}px,${y}px) scale(${s})`; };
+  window.setFrame = (frame) => {
+    const t = frame/24;
+    const scenes = [["s1",0,3.0],["s2",2.65,6.1],["s3",5.75,9.55],["s4",9.2,12.7],["s5",12.35,15.0]];
+    scenes.forEach(([id,a,b])=>$(id).style.opacity=sceneOpacity(t,a,b));
+    $("aurora").style.transform=`translate(${Math.sin(t*.7)*70}px,${Math.cos(t*.55)*45}px) rotate(${t*2}deg)`;
+    $("orbit").style.transform=`rotate(${t*14}deg) scale(${.88+range(t,.2,1.2)*.12})`;
+    $("heroLine").style.width=`${range(t,.5,1.8)*820}px`;
+    const p1=range(t,.1,.9); move(document.querySelector('.hero'),0,(1-p1)*45,.96+.04*p1);
+    const p2=range(t,2.9,3.65); move($("wechatCard"),(1-p2)*-80,0,.96+.04*p2);
+    const typed=range(t,3.25,4.25); $("bubble").style.maxWidth=`${typed*560}px`; $("bubble").style.paddingLeft=typed>.02?'30px':'0'; $("bubble").style.paddingRight=typed>.02?'30px':'0';
+    const number=1.25*range(t,3.35,5.05); $("timer").textContent=number.toFixed(2);
+    document.querySelectorAll('.node').forEach((n,i)=>{ const p=range(t,6.15+i*.18,6.75+i*.18); n.style.opacity=p; move(n,0,(1-p)*34,.94+.06*p); });
+    const cp=range(t,7.35,8.2); document.querySelector('.compression').style.opacity=cp; move(document.querySelector('.compression'),0,(1-cp)*24,1);
+    const q=range(t,9.55,10.5); move($("desktop"),(1-q)*95,0,.96+.04*q); $("quietBadge").style.transform=`scale(${.82+.18*q}) rotate(${Math.sin(t*2)*2}deg)`;
+    const f=range(t,12.65,13.4); move(document.querySelector('.final-inner'),0,(1-f)*38,.94+.06*f);
+    document.querySelector('.dot').style.opacity=.55+.45*(.5+.5*Math.sin(t*5));
+  };
+  window.setFrame(0);
+</script>
+</body>
+</html>

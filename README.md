@@ -80,6 +80,16 @@ The tests cover MCP discovery, exact-chat rejection, compact state, token reduct
 
 This repository is MIT licensed and free to install from GitHub. It deliberately avoids the Mac App Store so maintainers and users do not need a paid Apple Developer membership. A signed `.app` could be added later, but it is not required for the open-source release.
 
+## Promotion film
+
+The reproducible 15-second 1080p launch film lives in [`promo/`](promo/). It uses the real benchmark and an authorized WeChat screenshot; all motion graphics and audio are generated locally. To render it separately from the product install:
+
+```bash
+cd promo
+npm install
+npm run render
+```
+
 ## Limitations
 
 - macOS only for the first release.
