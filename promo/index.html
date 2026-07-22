@@ -147,40 +147,42 @@
   if (new URLSearchParams(location.search).get("lang") === "zh") {
     document.documentElement.lang = "zh-CN";
     document.querySelector('.status').innerHTML = '<span class="dot"></span>本地 / 就绪';
-    document.querySelector('#s1 .eyebrow').textContent = 'Codex × 微信 / 零云端中转';
-    document.querySelector('#s1 h1').innerHTML = '消息在走。<br><em>工作流不被打断。</em>';
-    document.querySelector('#s1 p').textContent = '面向 macOS 微信的原生、低 Token 本地桥接。';
-    document.querySelector('#s2 .eyebrow').textContent = '真实设备测试';
-    document.querySelector('#s2 h2').innerHTML = '一条指令。<br>一次验证发送。';
+    document.querySelector('#s1 .eyebrow').textContent = '直接用 Codex 控制 Mac 微信';
+    document.querySelector('#s1 h1').innerHTML = '不用切到微信。<br><em>直接让 Codex 发。</em>';
+    document.querySelector('#s1 p').textContent = '你只要说：“给 Jerry 发一条消息。”';
+    document.querySelector('#s2 .eyebrow').textContent = '真实 Mac 实测';
+    document.querySelector('#s2 h2').innerHTML = '自动找到 Jerry。<br>核对后立即发送。';
     document.querySelector('#s2 .timer span').textContent = '秒';
-    document.querySelector('#s2 p').textContent = '输入框已清空。送达已确认。匹配消息恰好一条。';
+    document.querySelector('#s2 p').textContent = '无需手动点开聊天；消息成功发出，而且只发送一次。';
     document.querySelector('#s2 .micro').textContent = '命令到结果 1,252.7 毫秒 · macOS · 2026-07-22';
     document.querySelector('#s2 .verify').innerHTML = '<span class="check">✓</span>精确聊天已验证 · JERRY';
-    document.querySelector('#s3 .eyebrow').textContent = '紧凑路径';
-    document.querySelector('#s3 h2').textContent = '更少界面，更懂意图。';
-    document.querySelector('#s3 .pipeline-sub').textContent = 'Codex 得到语义化消息，而不是一整墙辅助功能文本。';
+    document.querySelector('#s3 .eyebrow').textContent = '相比 COMPUTER USE 的完整辅助功能树';
+    document.querySelector('#s3 h2').textContent = '读取 8 条消息，约省 3,400 Token。';
+    document.querySelector('#s3 .pipeline-sub').textContent = '13,852 字符 → 296 字符；按 4 字符≈1 Token 粗估，减少约 97.9%。';
     const zhNodes = [
-      ['Codex', '理解你的指令'],
-      ['紧凑 MCP', '四个语义工具'],
-      ['原生 AX', '精确聊天验证'],
-      ['微信', '读取 · 等待 · 发送'],
+      ['你告诉 Codex', '“给 Jerry 发消息”'],
+      ['自动搜索', '找到名为 Jerry 的聊天'],
+      ['核对联系人', '确认没有发错聊天'],
+      ['微信发送', '消息发出并返回结果'],
     ];
     document.querySelectorAll('#s3 .node').forEach((node, index) => {
       node.querySelector('h3').textContent = zhNodes[index][0];
       node.querySelector('p').textContent = zhNodes[index][1];
     });
-    const zhDataLabels = ['真实诊断字符', '紧凑的 8 条消息结果'];
+    const zhDataValues = ['≈3,500', '≈75'];
+    const zhDataLabels = ['原始界面文本 · 估算 Token', 'FastBridge 结果 · 估算 Token'];
+    document.querySelectorAll('#s3 .data-box b').forEach((value, index) => value.textContent = zhDataValues[index]);
     document.querySelectorAll('#s3 .data-box small').forEach((label, index) => label.textContent = zhDataLabels[index]);
-    document.querySelector('#s4 .eyebrow').textContent = '自动精确选聊';
-    document.querySelector('#s4 h2').innerHTML = '无需手动<br>找聊天。';
-    document.querySelector('#s4 .quiet-copy p').textContent = 'FastBridge 自动搜索精确名称。能后台完成就留在后台；只有微信要求时才短暂前置，随后自动恢复你的工作。';
+    document.querySelector('#s4 .eyebrow').textContent = '不打断你正在做的事';
+    document.querySelector('#s4 h2').innerHTML = '聊天它来找。<br>你继续工作。';
+    document.querySelector('#s4 .quiet-copy p').textContent = 'FastBridge 会自动搜索聊天名称并核对目标。微信必须前置时，它只短暂切换，发送后马上回到你原来的窗口。';
     const zhFeatures = ['本地运行', 'MIT 开源', '无需 API 密钥', '无需 App Store'];
     document.querySelectorAll('#s4 .feature').forEach((feature, index) => feature.textContent = zhFeatures[index]);
     document.querySelector('#s4 .fake-code').innerHTML = '<span class="g">wechat_read</span>({ chat: "Jerry" })<br>→ 4 条消息 · 1.385 秒<br><br><span class="g">wechat_wait</span>({ after: signature })<br>→ 不返回未变化状态<br><br><span class="g">wechat_send</span>({ chat: "Jerry" })<br>→ 精确目标已验证';
     document.querySelector('#s4 .quiet-badge span').textContent = '自动恢复';
-    document.querySelector('#s5 .eyebrow').textContent = '免费 · 本地 · 开源';
-    document.querySelector('#s5 h2').innerHTML = '让微信拥有<br><em>Codex 速度。</em>';
-    document.querySelector('#s5 p').textContent = '几分钟安装，一秒级读写。';
+    document.querySelector('#s5 .eyebrow').textContent = '免费 · 本地运行 · 开源';
+    document.querySelector('#s5 h2').innerHTML = '把微信消息<br><em>交给 Codex。</em>';
+    document.querySelector('#s5 p').textContent = '安装 FastBridge，然后直接告诉 Codex 要给谁发什么。';
     const zhFooter = ['macOS', 'Intel + Apple 芯片', 'MIT'];
     document.querySelectorAll('#s5 .footer-pills span').forEach((pill, index) => pill.textContent = zhFooter[index]);
   }
