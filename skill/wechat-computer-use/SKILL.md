@@ -12,10 +12,10 @@ Control WeChat through compact semantic MCP tools. Use Computer Use only as fall
 1. If `wechat_status`, `wechat_read`, `wechat_send`, and `wechat_wait` are available, use them directly.
 2. Pin the exact chat title supplied by the user; the bridge automatically locates and opens it.
 3. Let the bridge attempt the background path first. WeChat 4.x may briefly focus for exact-result selection, then restores the previous app automatically.
-4. Call `wechat_read` immediately before `wechat_send`; keep reads at 4–8 messages.
+4. Call `wechat_read` immediately before `wechat_send`; keep the initial read at 4–8 messages. On later reads, pass the last `signature` as `after` and keep `context: 2` unless more history is genuinely needed.
 5. Do not add narration or another UI inspection between the user's send command and `wechat_send`.
 6. Confirm success only when `inputCleared` is true. Use returned latency measurements; normal sends should finish within seconds.
-7. Use `wechat_wait` with the last signature to wait without returning unchanged state.
+7. Use `wechat_wait` with the last signature to wait without returning unchanged state. It returns only new messages plus the requested 0–4 prior context lines.
 8. Keep `autoSelect: true` and `allowFocus: true` for normal use. Set `allowFocus: false` only when the user explicitly prefers a background-only attempt that may fail.
 9. Never issue WeChat tools in parallel; the MCP server serializes operations to prevent cross-chat races.
 

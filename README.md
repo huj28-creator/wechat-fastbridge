@@ -10,13 +10,17 @@ WeChat FastBridge combines:
 
 No cloud relay, OpenAI API key, WeChat protocol reverse engineering, process injection, App Store account, Xcode install, or paid service is required.
 
+Version 1.1 keeps the exact-chat write guard while making the common path optimistic: the native send or snapshot verifies the target itself, so an already-open chat needs one native call instead of a separate inspect followed by the operation. Automatic search runs only after a safe target-mismatch rejection.
+
 ## Performance targets
 
 - Local semantic bridge budget: **under 2 seconds** before WeChat UI response time.
 - Measured real optimized selected-chat send: **1.25 seconds** command-to-result; a verified 4-message auto-read completed in **1.38 seconds**.
 - Cold setup/check: **under 5 seconds** on a supported Mac.
 - Normal read result: **under 2,000 characters**.
+- Repeated reads: **zero messages when unchanged**; when changed, return only new messages plus 0–4 requested context lines.
 - Computer Use fallback: **at least 80% smaller** than the raw accessibility tree on the bundled representative fixture.
+- Runtime footprint: **under 256 KiB** for the bridge, skill, setup scripts, and universal native binary, enforced by tests. The normal install keeps a two-dependency ceiling.
 
 Every result includes measured latency. The test suite fails if the mocked local bridge overhead exceeds two seconds; real WeChat timings are reported separately in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 
@@ -57,7 +61,9 @@ Run `npm run doctor` at any time to check Node, the native bridge, Codex registr
 Codex → one compact MCP call → local native Accessibility bridge → WeChat
 ```
 
-The bridge automatically locates the exact chat, verifies both its selected row and input area's chat title, writes the input value directly, and verifies that sending cleared the input. It tries background control first; when WeChat 4.x blocks background confirmation, it briefly focuses WeChat and restores the previous app. Only compact JSON returns to Codex. A stable message signature lets `wechat_wait` poll without adding unchanged UI state to the conversation.
+The bridge first asks the native operation to verify and act in one scan. A mismatched chat is rejected before any write, then the bridge automatically locates the exact title, verifies both its selected row and input area's chat title, and retries once on the intended target. Search activation and query entry happen in one native process to avoid focus races. It tries background control first; when WeChat 4.x requires foreground confirmation, it briefly focuses WeChat and restores the previous app.
+
+Only compact JSON returns to Codex. Pass the previous `signature` back as `after` on `wechat_read`; unchanged reads return no messages, while changed reads return the new-message delta and up to two prior context lines by default. `wechat_wait` uses the same bounded delta path internally and suppresses the just-sent self-message before waiting for the actual reply.
 
 ## Safety and privacy
 
@@ -74,7 +80,7 @@ npm test
 python3 /path/to/skill-creator/scripts/quick_validate.py skill/wechat-computer-use
 ```
 
-The tests cover MCP discovery, exact-chat rejection, compact state, token reduction, and the two-second local send budget. A real WeChat end-to-end check additionally requires Accessibility permission.
+The tests cover MCP discovery, exact-chat rejection, one-call hot paths, bounded search retries, incremental context, compact state, token reduction, runtime size, dependency count, and the two-second local send budget. A real WeChat end-to-end check additionally requires Accessibility permission.
 
 ## Cost and distribution
 
@@ -82,7 +88,7 @@ This repository is MIT licensed and free to install from GitHub. It deliberately
 
 ## Promotion film
 
-The reproducible 15-second 1080p launch film lives in [`promo/`](promo/). It uses the real benchmark and an authorized WeChat screenshot; all motion graphics and audio are generated locally. To render it separately from the product install:
+The reproducible 15-second 1080p launch film lives in [`promo/`](promo/). It uses real benchmark numbers with a generalized mock project chat; all motion graphics and audio are generated locally. To render it separately from the product install:
 
 ```bash
 cd promo

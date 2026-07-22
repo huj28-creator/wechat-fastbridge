@@ -226,6 +226,15 @@ static id ParentWithRole(AXUIElementRef element, CFStringRef wantedRole) {
     return nil;
 }
 
+static BOOL ActivateWeChat(NSRunningApplication *app) {
+    [app activateWithOptions:NSApplicationActivateAllWindows];
+    for (NSUInteger attempt = 0; attempt < 10; attempt++) {
+        if ([NSWorkspace.sharedWorkspace.frontmostApplication.bundleIdentifier isEqualToString:@"com.tencent.xinWeChat"]) return YES;
+        usleep(50000);
+    }
+    return NO;
+}
+
 int main(int argc, const char *argv[]) {
     @autoreleasepool {
         NSDate *started = NSDate.date;
@@ -256,6 +265,16 @@ int main(int argc, const char *argv[]) {
         if ([command isEqualToString:@"status"]) {
             Emit(@{@"ok": @YES, @"pid": @(app.processIdentifier), @"latencyMs": @(-started.timeIntervalSinceNow * 1000)}, stdout);
             return 0;
+        }
+        if ([command isEqualToString:@"activate"]) {
+            if (!ActivateWeChat(app)) Fail(@"WECHAT_FOCUS_FAILED", @"macOS did not bring WeChat to the foreground");
+            Emit(@{@"ok": @YES, @"pid": @(app.processIdentifier),
+                   @"frontmost": @YES, @"latencyMs": @(-started.timeIntervalSinceNow * 1000)}, stdout);
+            return 0;
+        }
+
+        if ([command isEqualToString:@"search"] && [args containsObject:@"--activate"] && !ActivateWeChat(app)) {
+            Fail(@"WECHAT_FOCUS_FAILED", @"macOS did not bring WeChat to the foreground");
         }
 
         NSString *chat = Option(args, @"--chat");

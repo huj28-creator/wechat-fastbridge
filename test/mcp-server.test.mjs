@@ -27,7 +27,7 @@ test("MCP server exposes the fast semantic WeChat tools", async () => {
     );
     const result = await client.callTool({ name: "wechat_send", arguments: { chat: "lab", text: "hello", autoSelect: false, allowFocus: false } });
     assert.equal(result.structuredContent.ok, true);
-    assert.equal(result.content[0].text, '{"ok":true,"chat":"lab"}');
+    assert.deepEqual(JSON.parse(result.content[0].text), { ok: true, chat: "lab", messageCount: 1, signature: "abc123" });
     assert.ok(JSON.stringify(result).length < 700);
   } finally {
     await transport.close();
