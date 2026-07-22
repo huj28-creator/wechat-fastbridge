@@ -12,10 +12,10 @@ async function directoryBytes(root) {
   return bytes;
 }
 
-test("runtime source and universal native bridge stay below 256 KiB", async () => {
+test("runtime source and universal native bridge stay below 288 KiB", async () => {
   const bytes = await Promise.all(["bridge", "skill", "scripts"].map(directoryBytes));
   const total = bytes.reduce((sum, value) => sum + value, 0);
-  assert.ok(total < 256 * 1024, `runtime footprint grew to ${(total / 1024).toFixed(1)} KiB`);
+  assert.ok(total < 288 * 1024, `runtime footprint grew to ${(total / 1024).toFixed(1)} KiB`);
 });
 
 test("runtime keeps its two-dependency ceiling", async () => {

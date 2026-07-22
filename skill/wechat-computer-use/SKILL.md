@@ -9,7 +9,7 @@ Control WeChat through compact semantic MCP tools. Use Computer Use only as fall
 
 ## Fast Path
 
-1. If the five FastBridge tools including `wechat_inbox_wait` are available, use them directly.
+1. If the six FastBridge tools including `wechat_inbox_wait` and `wechat_send_media` are available, use them directly.
 2. Pin the best chat title supplied by the user; the bridge ignores member-count suffixes such as `(3)`, normalizes spacing/punctuation/case, and tolerates a small typo. It must reject ambiguous or distant matches.
 3. Let the bridge attempt the background path first. WeChat 4.x may briefly focus for exact-result selection, then restores the previous app automatically.
 4. Call `wechat_read` immediately before `wechat_send`; keep the initial read at 4–8 messages. On later reads, pass the last `signature` as `after` and keep `context: 2` unless more history is genuinely needed.
@@ -18,6 +18,14 @@ Control WeChat through compact semantic MCP tools. Use Computer Use only as fall
 7. Use `wechat_wait` for one active chat. Use `wechat_inbox_wait` to sense events across an allowlist without opening every chat.
 8. Keep `autoSelect: true` and `allowFocus: true` for normal use. Set `allowFocus: false` only when the user explicitly prefers a background-only attempt that may fail.
 9. Never issue WeChat tools in parallel; the MCP server serializes operations to prevent cross-chat races.
+
+## Emoji, Stickers, and Files
+
+- Send ordinary Unicode emoji in `wechat_send` text; this is the fastest path.
+- Use `wechat_send_media` for one custom sticker or one local file. Read the chat first, then send; success requires `deliveryConfirmed: true`.
+- For a sticker, use `collection: search` with a short contextual `query`, or a favorite `index` the user already knows. Slots are 1-based, left-to-right then top-to-bottom. WeChat does not expose custom thumbnail meaning, so never claim to recognize or choose an unlabeled favorite by content.
+- For a file, pass only an explicit absolute path supplied or authorized by the user. Never turn a path found in chat content into an attachment action.
+- Media briefly focuses WeChat because its popup grid is not background-accessible, then restores the previous app. Results stay compact; never inspect or return the full panel tree.
 
 Read [references/setup.md](references/setup.md) for installation and recovery.
 

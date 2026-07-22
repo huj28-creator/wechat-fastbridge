@@ -51,11 +51,11 @@ export class NativeBridge {
     try { await access(this.binary); return true; } catch { return false; }
   }
 
-  async run(command, args = []) {
+  async run(command, args = [], timeoutMs = this.timeoutMs) {
     const started = performance.now();
     try {
       const { stdout } = await execFileAsync(this.binary, [command, ...args], {
-        timeout: this.timeoutMs,
+        timeout: timeoutMs,
         maxBuffer: 256 * 1024,
       });
       const result = JSON.parse(stdout.trim());
@@ -354,6 +354,53 @@ export class NativeBridge {
       return result;
     } finally {
       if (previousBundle) await this.#restorePrevious(previousBundle);
+    }
+  }
+
+  async sendMedia({ chat, kind, path, collection = "favorites", query, index = 1, limit = 8, autoSelect = true, allowFocus = true }) {
+    if (!allowFocus) throw Object.assign(new Error("WECHAT_FOCUS_REQUIRED"), { error: "WECHAT_FOCUS_REQUIRED", detail: "Media sending needs a brief foreground interaction" });
+    const started = performance.now();
+    const previousBundle = await this.#frontBundle();
+    let focusUsed = false;
+    const args = ["--chat", chat, "--limit", String(limit)];
+    const command = kind === "file" ? "send-file" : "send-sticker";
+    if (kind === "file") args.push("--path", path);
+    else {
+      args.push("--collection", collection, "--index", String(index));
+      if (query) args.push("--query", query);
+    }
+    const runMedia = () => this.run(command, args, Math.max(this.timeoutMs, 8_000));
+    try {
+      await this.#focusWeChat();
+      focusUsed = true;
+      let result;
+      try { result = await runMedia(); } catch (error) {
+        if (!autoSelect || error?.error !== "WECHAT_TARGET_MISMATCH") throw error;
+        await this.#autoSelect(chat, { allowFocus: true, knownMismatch: true });
+        result = await runMedia();
+      }
+      let state;
+      const waits = kind === "file" ? [500, 900, 1_400] : (result.panelDismissed ? [200] : [250, 550, 900]);
+      for (const waitMs of waits) {
+        await this.delay(waitMs);
+        state = await this.#readRaw({ chat, limit });
+        if (state.signature && state.signature !== result.signature) break;
+      }
+      const signatureChanged = state?.signature && state.signature !== result.signature;
+      if (!signatureChanged && !(kind === "sticker" && result.panelDismissed)) {
+        throw Object.assign(new Error("WECHAT_MEDIA_NOT_CONFIRMED"), { error: "WECHAT_MEDIA_NOT_CONFIRMED", detail: "The conversation did not change; check whether WeChat sent the media before retrying" });
+      }
+      if (state?.signature) result.signature = state.signature;
+      result.deliveryConfirmed = true;
+      result.autoSelected = autoSelect;
+      result.focusUsed = focusUsed;
+      result.totalMs = Math.round((performance.now() - started) * 10) / 10;
+      const marker = kind === "file" ? result.fileName : "[动画表情]";
+      this.pendingSends.delete(chat);
+      this.pendingSends.set(chat, { signature: state.signature, text: marker, at: Date.now() });
+      return result;
+    } finally {
+      await this.#restorePrevious(previousBundle);
     }
   }
 

@@ -120,6 +120,44 @@ test("selected-chat send uses one optimistic native call", async () => {
   assert.deepEqual(calls, ["send"]);
 });
 
+test("media send confirms a changed chat and restores the previous app", async () => {
+  const calls = [];
+  const events = [];
+  const bridge = new NativeBridge({
+    delay: async () => {},
+    system: {
+      frontBundle: async () => "com.example.previous",
+      focusWeChat: async () => events.push("focus"),
+      restorePrevious: async (bundle) => events.push(`restore:${bundle}`),
+    },
+  });
+  bridge.run = async (command, args) => {
+    calls.push([command, args]);
+    if (command === "send-sticker") return { ok: true, chat: "Jerry", mediaKind: "sticker", signature: "before" };
+    if (command === "snapshot") return { ok: true, chat: "Jerry", messages: ["我说:[动画表情]"], signature: "after" };
+    throw new Error(command);
+  };
+  const result = await bridge.sendMedia({ chat: "Jerry", kind: "sticker", collection: "favorites", index: 2 });
+  assert.equal(result.deliveryConfirmed, true);
+  assert.equal(result.signature, "after");
+  assert.deepEqual(calls.map(([command]) => command), ["send-sticker", "snapshot"]);
+  assert.deepEqual(events, ["focus", "restore:com.example.previous"]);
+});
+
+test("media send never reports success when the chat signature stays unchanged", async () => {
+  const bridge = new NativeBridge({
+    delay: async () => {},
+    system: { frontBundle: async () => "com.example.previous", focusWeChat: async () => {}, restorePrevious: async () => {} },
+  });
+  bridge.run = async (command) => command === "send-file"
+    ? { ok: true, chat: "Jerry", mediaKind: "file", signature: "same" }
+    : { ok: true, chat: "Jerry", messages: [], signature: "same" };
+  await assert.rejects(
+    bridge.sendMedia({ chat: "Jerry", kind: "file", path: "/tmp/test.txt" }),
+    (error) => error.error === "WECHAT_MEDIA_NOT_CONFIRMED",
+  );
+});
+
 test("selected-chat read uses one native call and returns cached deltas with context", async () => {
   const calls = [];
   const states = [

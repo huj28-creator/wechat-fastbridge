@@ -287,6 +287,14 @@ static void PostKeyGlobal(CGEventSourceRef source, CGKeyCode key, CGEventFlags f
     CFRelease(down); CFRelease(up);
 }
 
+static void ClickGlobal(CGPoint point) {
+    CGEventRef move = CGEventCreateMouseEvent(NULL, kCGEventMouseMoved, point, kCGMouseButtonLeft);
+    CGEventRef down = CGEventCreateMouseEvent(NULL, kCGEventLeftMouseDown, point, kCGMouseButtonLeft);
+    CGEventRef up = CGEventCreateMouseEvent(NULL, kCGEventLeftMouseUp, point, kCGMouseButtonLeft);
+    CGEventPost(kCGHIDEventTap, move); CGEventPost(kCGHIDEventTap, down); CGEventPost(kCGHIDEventTap, up);
+    CFRelease(move); CFRelease(down); CFRelease(up);
+}
+
 static NSArray<NSPasteboardItem *> *CopyPasteboardItems(NSPasteboard *pasteboard) {
     NSMutableArray *copies = [NSMutableArray array];
     for (NSPasteboardItem *original in pasteboard.pasteboardItems ?: @[]) {
@@ -327,7 +335,7 @@ int main(int argc, const char *argv[]) {
         NSMutableArray<NSString *> *args = [NSMutableArray array];
         for (int i = 1; i < argc; i++) [args addObject:[NSString stringWithUTF8String:argv[i]]];
         NSString *command = args.firstObject;
-        if (!command) Fail(@"USAGE", @"status|snapshot|send");
+        if (!command) Fail(@"USAGE", @"status|snapshot|send|send-file|send-sticker");
         if ([command isEqualToString:@"match-name"]) {
             NSString *chat = Option(args, @"--chat") ?: @"";
             NSString *candidate = Option(args, @"--candidate") ?: @"";
@@ -382,7 +390,8 @@ int main(int argc, const char *argv[]) {
         NSInteger limit = MAX(1, MIN(20, [Option(args, @"--limit") ?: @"8" integerValue]));
         BOOL fastScan = [command isEqualToString:@"search"] || [command isEqualToString:@"select"] ||
                         [command isEqualToString:@"send"] || [command isEqualToString:@"inspect-fast"] || inboxMode;
-        NSInteger pruneMode = fastScan ? 1 : ([command isEqualToString:@"snapshot"] ? 2 : 0);
+        BOOL mediaMode = [command isEqualToString:@"send-file"] || [command isEqualToString:@"send-sticker"];
+        NSInteger pruneMode = fastScan ? 1 : (([command isEqualToString:@"snapshot"] || mediaMode) ? 2 : 0);
         NSArray<NSDictionary *> *nodes = nil;
         NSDictionary *window = nil;
         for (NSRunningApplication *candidate in apps) {
@@ -437,10 +446,14 @@ int main(int argc, const char *argv[]) {
         NSDictionary *targetRow = nil;
         NSUInteger targetRowMatches = 0;
         NSDictionary *searchField = nil;
+        NSDictionary *emojiButton = nil;
         for (NSDictionary *node in nodes) {
             NSString *role = node[@"role"];
             NSArray<NSString *> *strings = node[@"strings"];
             NSRect nodeFrame = [node[@"frame"] rectValue];
+            if ([role isEqualToString:(__bridge NSString *)kAXButtonRole]) for (NSString *value in strings) {
+                if ([value isEqualToString:@"表情"]) emojiButton = node;
+            }
             if ([role isEqualToString:(__bridge NSString *)kAXTextFieldRole] &&
                 !NSEqualRects(nodeFrame, NSZeroRect) && NSMidX(nodeFrame) < NSMidX(windowFrame) &&
                 NSMinY(nodeFrame) < NSMinY(windowFrame) + 140 &&
@@ -694,6 +707,135 @@ int main(int argc, const char *argv[]) {
         NSArray *allMessages = messages.array;
         NSArray *recent = allMessages.count > limit ? [allMessages subarrayWithRange:NSMakeRange(allMessages.count - limit, limit)] : allMessages;
         NSString *signature = FNV1a([recent componentsJoinedByString:@"\n"]);
+        if ([command isEqualToString:@"send-file"]) {
+            NSString *path = Option(args, @"--path") ?: @"";
+            BOOL directory = NO;
+            if (![path isAbsolutePath] || ![NSFileManager.defaultManager fileExistsAtPath:path isDirectory:&directory] || directory) {
+                Fail(@"FILE_NOT_FOUND", @"Pass an absolute path to a readable file");
+            }
+            NSDictionary *attributes = [NSFileManager.defaultManager attributesOfItemAtPath:path error:nil];
+            unsigned long long bytes = [attributes fileSize];
+            if (bytes > 100 * 1024 * 1024) Fail(@"FILE_TOO_LARGE", @"Files are limited to 100 MiB");
+            AXUIElementRef inputElement = (__bridge AXUIElementRef)input[@"element"];
+            if (AXUIElementSetAttributeValue(inputElement, kAXFocusedAttribute, kCFBooleanTrue) != kAXErrorSuccess ||
+                !AXBool(inputElement, kAXFocusedAttribute)) Fail(@"WECHAT_INPUT_NOT_FOCUSED", chat);
+            NSPasteboard *pasteboard = NSPasteboard.generalPasteboard;
+            NSArray *savedItems = CopyPasteboardItems(pasteboard);
+            [pasteboard clearContents];
+            if (![pasteboard writeObjects:@[[NSURL fileURLWithPath:path]]]) Fail(@"FILE_PASTEBOARD_FAILED", path.lastPathComponent);
+            NSInteger bridgePasteChange = pasteboard.changeCount;
+            CGEventSourceRef source = CGEventSourceCreate(kCGEventSourceStateCombinedSessionState);
+            PostKeyGlobal(source, 9, kCGEventFlagMaskCommand);
+            usleep(350000);
+            BOOL clipboardRestored = NO;
+            if (pasteboard.changeCount == bridgePasteChange) {
+                [pasteboard clearContents];
+                if (savedItems.count) [pasteboard writeObjects:savedItems];
+                clipboardRestored = YES;
+            }
+            PostKeyGlobal(source, 36, 0);
+            CFRelease(source);
+            usleep(450000);
+            Emit(@{ @"ok": @YES, @"chat": chat, @"mediaKind": @"file", @"fileName": path.lastPathComponent,
+                    @"fileBytes": @(bytes), @"attachmentAttempted": @YES, @"clipboardRestored": @(clipboardRestored),
+                    @"signature": signature, @"latencyMs": @(-started.timeIntervalSinceNow * 1000) }, stdout);
+            return 0;
+        }
+        if ([command isEqualToString:@"send-sticker"]) {
+            if (!emojiButton) Fail(@"WECHAT_EMOJI_BUTTON_NOT_FOUND", chat);
+            NSString *collection = Option(args, @"--collection") ?: @"favorites";
+            NSString *query = Option(args, @"--query") ?: @"";
+            NSInteger index = [Option(args, @"--index") ?: @"1" integerValue];
+            if (![@[@"search", @"favorites"] containsObject:collection]) Fail(@"STICKER_COLLECTION_INVALID", collection);
+            if ([collection isEqualToString:@"search"] && !query.length) Fail(@"STICKER_QUERY_REQUIRED", @"Search stickers need --query");
+            if (index < 1 || index > 20) Fail(@"STICKER_INDEX_INVALID", @"Use a visible slot from 1 through 20");
+            CGEventSourceRef escapeSource = CGEventSourceCreate(kCGEventSourceStateCombinedSessionState);
+            PostKeyGlobal(escapeSource, 53, 0);
+            CFRelease(escapeSource); usleep(60000);
+            NSRect emojiFrame = [emojiButton[@"frame"] rectValue];
+            ClickGlobal(CGPointMake(NSMidX(emojiFrame), NSMidY(emojiFrame)));
+            usleep(350000);
+            CGFloat toolbarY = NSMinY(emojiFrame);
+            NSMutableArray<NSDictionary *> *mediaNodes = [NSMutableArray array];
+            void (^scanMedia)(void) = ^{
+                [mediaNodes removeAllObjects];
+                for (NSRunningApplication *candidate in apps) {
+                    AXUIElementRef root = AXUIElementCreateApplication(candidate.processIdentifier);
+                    NSArray *windows = AXAttr(root, kAXWindowsAttribute);
+                    for (id mediaWindow in [[windows isKindOfClass:NSArray.class] ? windows : @[] reverseObjectEnumerator]) {
+                        NSArray *candidateNodes = WalkMode((__bridge AXUIElementRef)mediaWindow, 2400, 0, 0);
+                        NSUInteger candidateTabs = 0;
+                        for (NSDictionary *node in candidateNodes) {
+                            NSRect frame = [node[@"frame"] rectValue];
+                            if ([node[@"role"] isEqualToString:(__bridge NSString *)kAXImageRole] && frame.size.width >= 20 && frame.size.width <= 40 &&
+                                frame.size.height >= 20 && frame.size.height <= 40 && NSMidY(frame) < toolbarY && NSMidY(frame) > toolbarY - 120) candidateTabs++;
+                        }
+                        if (candidateTabs >= 4) {
+                            [mediaNodes addObjectsFromArray:candidateNodes];
+                            break;
+                        }
+                    }
+                    CFRelease(root);
+                    if (mediaNodes.count) break;
+                }
+            };
+            scanMedia();
+            NSMutableArray<NSDictionary *> *tabs = [NSMutableArray array];
+            for (NSDictionary *node in mediaNodes) {
+                NSRect frame = [node[@"frame"] rectValue];
+                if ([node[@"role"] isEqualToString:(__bridge NSString *)kAXImageRole] && frame.size.width >= 20 && frame.size.width <= 40 &&
+                    frame.size.height >= 20 && frame.size.height <= 40 && NSMidY(frame) < toolbarY && NSMidY(frame) > toolbarY - 120) [tabs addObject:node];
+            }
+            [tabs sortUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
+                CGFloat ax = NSMinX([a[@"frame"] rectValue]), bx = NSMinX([b[@"frame"] rectValue]);
+                return ax < bx ? NSOrderedAscending : (ax > bx ? NSOrderedDescending : NSOrderedSame);
+            }];
+            NSInteger tabIndex = [collection isEqualToString:@"search"] ? 0 : 2;
+            if (tabs.count <= tabIndex) Fail(@"WECHAT_STICKER_TABS_NOT_FOUND", chat);
+            NSRect firstTabFrame = [tabs[0][@"frame"] rectValue];
+            NSRect tabFrame = [tabs[tabIndex][@"frame"] rectValue];
+            AXUIElementRef tabElement = (__bridge AXUIElementRef)tabs[tabIndex][@"element"];
+            ClickGlobal(CGPointMake(NSMidX(tabFrame), NSMidY(tabFrame)));
+            usleep(300000);
+            CGFloat panelLeft = NSMinX(firstTabFrame) - 35;
+            CGFloat panelRight = panelLeft + 478;
+            CGFloat gridTop = toolbarY - 476;
+            NSDictionary *queryField = nil;
+            if ([collection isEqualToString:@"search"]) {
+                scanMedia();
+                for (NSDictionary *node in mediaNodes) {
+                    NSRect frame = [node[@"frame"] rectValue];
+                    if ([node[@"role"] isEqualToString:(__bridge NSString *)kAXTextFieldRole] && [node[@"settable"] boolValue] &&
+                        frame.size.width > 300 && NSMidX(frame) > panelLeft && NSMidX(frame) < panelRight) queryField = node;
+                }
+            }
+            if ([collection isEqualToString:@"search"]) {
+                if (!queryField) Fail(@"WECHAT_STICKER_SEARCH_NOT_FOUND", chat);
+                NSRect fieldFrame = [queryField[@"frame"] rectValue];
+                panelRight = NSMaxX(fieldFrame) + 12;
+                gridTop = NSMaxY(fieldFrame) + 16;
+                AXError queryError = AXUIElementSetAttributeValue((__bridge AXUIElementRef)queryField[@"element"], kAXValueAttribute, (__bridge CFTypeRef)query);
+                if (queryError != kAXErrorSuccess) Fail(@"WECHAT_STICKER_QUERY_FAILED", query);
+                usleep(600000);
+            }
+            CGFloat cell = (panelRight - panelLeft) / 5.0;
+            NSInteger slot = index - 1;
+            CGPoint stickerPoint = CGPointMake(panelLeft + (slot % 5 + 0.5) * cell, gridTop + (slot / 5 + 0.5) * cell);
+            if (stickerPoint.y >= toolbarY - 15 || cell < 60 || cell > 130) Fail(@"STICKER_SLOT_NOT_VISIBLE", [NSString stringWithFormat:@"%ld", (long)index]);
+            ClickGlobal(stickerPoint);
+            usleep(500000);
+            BOOL panelDismissed = !AXString(tabElement, kAXRoleAttribute) || NSEqualRects(AXFrame(tabElement), NSZeroRect);
+            if (!panelDismissed) {
+                CGEventSourceRef closeSource = CGEventSourceCreate(kCGEventSourceStateCombinedSessionState);
+                PostKeyGlobal(closeSource, 53, 0);
+                CFRelease(closeSource);
+            }
+            Emit(@{ @"ok": @YES, @"chat": chat, @"mediaKind": @"sticker", @"collection": collection,
+                    @"index": @(index), @"queryChars": @(query.length), @"stickerAttempted": @YES,
+                    @"panelDismissed": @(panelDismissed),
+                    @"signature": signature, @"latencyMs": @(-started.timeIntervalSinceNow * 1000) }, stdout);
+            return 0;
+        }
         if ([command isEqualToString:@"snapshot"]) {
             Emit(@{@"ok": @YES, @"chat": chat, @"messages": recent, @"signature": signature,
                    @"inputReady": @YES, @"selectedChatMatched": @YES, @"headerMatched": @YES,
