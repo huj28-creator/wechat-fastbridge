@@ -1,10 +1,10 @@
 # Benchmarks
 
-## Version 1.7 algorithm gates
+## Version 1.7.1 algorithm gates
 
-The v1.7 hot path combines verified routing, allowlisted semantic inbox events, compact structured errors, compact media, adaptive polling, cached sticker geometry, bounded rolling memory, and an extractive high-signal fact capsule. Unchanged scans, unread decreases, stale conflicting facts, and unrelated titles are discarded before returning to Codex.
+The v1.7.1 hot path combines verified routing, allowlisted semantic inbox events, compact structured errors, compact media, adaptive polling, cached sticker geometry, bounded rolling memory, and an extractive high-signal fact capsule. Semantic context is now an adaptive maximum: relevant evidence plus one continuity line is returned without unrelated quota padding. Formatting-only bubble variants align locally. Unchanged scans, unread decreases, stale conflicting facts, and unrelated titles are discarded before returning to Codex.
 
-| Gate | v1.0 path | v1.6 path |
+| Gate | v1.0 path | v1.7.1 path |
 | --- | ---: | ---: |
 | Already-selected send native calls | inspect + send | send |
 | Already-selected read native calls | inspect + snapshot | snapshot |
@@ -12,6 +12,7 @@ The v1.7 hot path combines verified routing, allowlisted semantic inbox events, 
 | Unchanged repeated-read messages returned | up to limit | 0 |
 | Changed repeated-read payload | full window | new delta + 0–4 context lines |
 | Representative 1-new-message compact payload | full 8-message result | 43.8% fewer JSON characters with 2 context lines |
+| Representative semantic context | full 6-message prior window | 63.8% fewer JSON characters with relevant evidence + continuity |
 | Wait immediately after send | may return own send | re-baselines on own send, returns reply |
 | Cached context bound | none | 120 messages/24 KB + 40 facts/8 KB × 8 chats, RAM-only |
 | Runtime footprint gate | none | <288 KiB |
@@ -22,10 +23,11 @@ The v1.7 hot path combines verified routing, allowlisted semantic inbox events, 
 | Unchanged inbox payload | n/a | zero events |
 | File/sticker context input | screenshots / accessibility dump | explicit path or query/slot only |
 | MCP tool-definition characters | n/a | 2,849 (49% below 5,624; 21% below v1.5) |
-| Triggered skill instructions | n/a | 3,924 bytes |
+| Triggered skill instructions | n/a | 4,024 bytes |
 | Rolling conversation memory | none | 120 messages/24 KB × 8 chats, RAM-only |
 | Durable fact capsule | none | 40 high-signal source messages/8 KB × 8 chats, RAM-only |
-| Delta context | last lines only | recent continuity + concept/rarity-ranked facts + stale-number suppression |
+| Delta context | last lines only | adaptive relevant evidence + continuity; generic messages retain requested depth |
+| Formatting-only old bubbles | retransmitted | colon/whitespace variants aligned locally |
 | Unread decrease after opening chat | false event | ignored locally |
 | Repeated preview with unread increase | may be missed | emitted as an event |
 | English preview containing commas | truncated | preserved |
@@ -76,7 +78,7 @@ The original text-send benchmark used `autoSelect: true`, verified the already-s
 ## Automated gates
 
 - MCP server exposes only compact semantic tools.
-- Thirty-six tests cover MCP discovery/schema budgets, structured errors, version sync, synonym-aware and durable smart context, stale-number suppression, normalized/fuzzy names, comma-safe previews, confirmed media and geometry reuse, compact native round trips, meaningful allowlisted inbox deltas, false/own-event suppression, recovery, runtime size, dependencies, token reduction, and wrong-chat rejection.
+- Thirty-nine tests cover MCP discovery/schema budgets, structured errors, version sync, synonym-aware and durable smart context, adaptive no-padding retrieval, sender-identity recall, formatting-only delta alignment, stale-number suppression, normalized/fuzzy names, comma-safe previews, confirmed media and geometry reuse, compact native round trips, meaningful allowlisted inbox deltas, false/own-event suppression, recovery, runtime size, dependencies, token reduction, and wrong-chat rejection.
 - Compact Computer Use fallback removes at least 80% of representative UI-tree characters.
 - Exact-chat mismatch prevents writes.
 - Skill passes the standard Codex skill validator.

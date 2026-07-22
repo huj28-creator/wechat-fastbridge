@@ -218,6 +218,20 @@ test("selected-chat read uses one native call and returns cached deltas with con
   assert.equal(differentLimit.delta, false);
 });
 
+test("delta alignment does not retransmit formatting-only message variants", async () => {
+  const states = [
+    { ok: true, chat: "shop", messages: ["客服说：价格是 500 元", "我说：收到"], signature: "s1" },
+    { ok: true, chat: "shop", messages: ["客服说:价格是 500 元", "我说:收到", "客户说:还能优惠吗"], signature: "s2" },
+  ];
+  const bridge = new NativeBridge();
+  bridge.run = async () => states.shift();
+  const baseline = await bridge.read({ chat: "shop", limit: 3 });
+  const delta = await bridge.read({ chat: "shop", limit: 3, after: baseline.signature, context: 2 });
+  assert.deepEqual(delta.messages, ["客户说:还能优惠吗"]);
+  assert.equal(delta.returnedCount, 1);
+  assert.equal(delta.delta, true);
+});
+
 test("smart context retrieves an older relevant fact plus recent continuity", async () => {
   const firstWindow = ["A说:项目预算上限是5000元", "B说:周五交付", "A说:今天下雨", "B说:收到", "A说:午饭吃什么", "B说:我去开会", "A说:好的", "B说:我晚点回复"];
   const states = [
@@ -248,6 +262,43 @@ test("smart context connects Chinese synonyms without retransmitting full histor
   assert.ok(delta.context.includes("客服说:这款价格是500元"), JSON.stringify(delta.context));
   assert.ok(delta.context.includes("客服说:周五发货"), JSON.stringify(delta.context));
   assert.ok(JSON.stringify(delta.context).length < JSON.stringify(firstWindow).length);
+});
+
+test("semantic retrieval returns relevant evidence without unrelated quota padding", async () => {
+  const firstWindow = [
+    "客服说:商品价格是500元",
+    "客服说:周五发货",
+    "客服说:今天天气不错",
+    "我说:好的",
+    "客服说:继续等通知",
+    "我说:收到",
+  ];
+  const states = [
+    { ok: true, chat: "shop", messages: firstWindow, signature: "s1" },
+    { ok: true, chat: "shop", messages: [...firstWindow.slice(1), "我说:这件商品多少钱"], signature: "s2" },
+  ];
+  const bridge = new NativeBridge();
+  bridge.run = async () => states.shift();
+  const baseline = await bridge.read({ chat: "shop", limit: 6 });
+  const delta = await bridge.read({ chat: "shop", limit: 6, after: baseline.signature, context: 4 });
+  assert.deepEqual(delta.messages, ["我说:这件商品多少钱"]);
+  assert.deepEqual(delta.context, ["客服说:商品价格是500元", "我说:收到"]);
+  assert.equal(delta.context.includes("客服说:今天天气不错"), false);
+  assert.ok(JSON.stringify(delta.context).length * 2 < JSON.stringify(firstWindow).length);
+});
+
+test("sender identity remains searchable without treating labels as body relevance", async () => {
+  const firstWindow = ["Alice说:最终报价是500元", "Bob说:明天发货", "我说:收到", "Bob说:稍后联系"];
+  const states = [
+    { ok: true, chat: "sales", messages: firstWindow, signature: "s1" },
+    { ok: true, chat: "sales", messages: [...firstWindow.slice(1), "我说:Alice之前确认了什么"], signature: "s2" },
+  ];
+  const bridge = new NativeBridge();
+  bridge.run = async () => states.shift();
+  const baseline = await bridge.read({ chat: "sales", limit: 4 });
+  const delta = await bridge.read({ chat: "sales", limit: 4, after: baseline.signature, context: 3 });
+  assert.ok(delta.context.includes("Alice说:最终报价是500元"), JSON.stringify(delta.context));
+  assert.equal(delta.context.includes("Bob说:明天发货"), false, JSON.stringify(delta.context));
 });
 
 test("durable fact capsules retain important evidence after the rolling window is evicted", async () => {

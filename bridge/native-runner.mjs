@@ -17,19 +17,29 @@ const semanticConcepts = [
   ["@problem", /问题|错误|失败|坏了|不能|无法|异常|投诉|problem|error|fail|broken|issue|complaint/iu],
   ["@order", /订单|单号|合同|发票|订单号|order|invoice|contract/iu],
 ];
+const messageKey = (value) => String(value || "")
+  .normalize("NFKC").toLocaleLowerCase().trim().replace(/\s+/gu, " ").replace(/：/gu, ":");
+const messageParts = (value) => {
+  const text = String(value || "").normalize("NFKC").toLocaleLowerCase();
+  const match = text.match(/^(?!(?:https?|mailto)\s*:)([^:\n：]{1,32}?)(?:说)?\s*[:：]\s*(.*)$/iu);
+  if (!match) return { body: text, speaker: "" };
+  return { body: match[2], speaker: match[1].replace(/\s+/gu, "").replace(/说$/u, "") };
+};
 const semanticTerms = (value) => {
   const text = String(value || "").normalize("NFKC").toLocaleLowerCase();
-  const terms = new Set(text.match(/[a-z][a-z0-9._@/-]+|\d+(?:[.,]\d+)?/g) || []);
-  for (const run of text.match(/[\p{Script=Han}]{2,}/gu) || []) {
+  const { body, speaker } = messageParts(text);
+  const terms = new Set();
+  for (const token of body.match(/[a-z][a-z0-9._@/-]+|\d+(?:[.,]\d+)?/g) || []) terms.add(token);
+  if (speaker.length >= 2) terms.add(speaker);
+  for (const run of body.match(/[\p{Script=Han}]{2,}/gu) || []) {
     if (run.length <= 6) terms.add(run);
     for (let index = 0; index + 1 < run.length; index += 1) terms.add(run.slice(index, index + 2));
   }
   for (const [concept, pattern] of semanticConcepts) if (pattern.test(text)) terms.add(concept);
   return terms;
 };
-const durableFactScore = (message) => {
+const durableFactScore = (message, terms = semanticTerms(message)) => {
   const text = String(message || "");
-  const terms = semanticTerms(text);
   let score = [...terms].filter((term) => term.startsWith("@")).length;
   if ([...terms].some((term) => /^\d/.test(term))) score += 2;
   if (/确认|确定|决定|最终|改为|更新为|承诺|地址|联系人|单号|截止|confirmed?|decided?|final|changed? to|updated? to|promise|address|contact|deadline/iu.test(text)) score += 2;
@@ -37,13 +47,19 @@ const durableFactScore = (message) => {
   return score;
 };
 const uniqueLatest = (messages) => {
-  const last = new Map(messages.map((message, index) => [message, index]));
-  return messages.filter((message, index) => last.get(message) === index);
+  const last = new Map(messages.map((message, index) => [messageKey(message), index]));
+  return messages.filter((message, index) => last.get(messageKey(message)) === index);
 };
 const appendWindow = (history, window) => {
   let overlap = Math.min(history.length, window.length);
-  while (overlap && history.slice(-overlap).join("\0") !== window.slice(0, overlap).join("\0")) overlap -= 1;
-  return [...history, ...window.slice(overlap)];
+  while (overlap && history.slice(-overlap).some((message, index) => messageKey(message) !== messageKey(window[index]))) overlap -= 1;
+  return [...history.slice(0, history.length - overlap), ...window];
+};
+const boundedTail = (messages, maxCount, maxChars) => {
+  let start = Math.max(0, messages.length - maxCount);
+  let chars = messages.slice(start).reduce((sum, message) => sum + message.length, 0);
+  while (start < messages.length && chars > maxChars) chars -= messages[start++].length;
+  return messages.slice(start);
 };
 const normalizeChat = (value) => String(value || "")
   .replace(/\s*[（(]\s*\d+\s*[)）]\s*$/u, "")
@@ -247,18 +263,18 @@ export class NativeBridge {
     const cached = this.snapshots.get(result.chat) ?? {};
     const history = (cached.history ?? []).filter((item) => item.signature !== result.signature || item.limit !== limit);
     history.push({ signature: result.signature, limit, messages: [...result.messages] });
-    const memory = appendWindow(cached.memory ?? [], result.messages);
-    while (memory.length > 120 || memory.reduce((sum, message) => sum + message.length, 0) > 24_000) memory.shift();
+    const memory = boundedTail(appendWindow(cached.memory ?? [], result.messages), 120, 24_000);
     const facts = [...(cached.facts ?? [])];
     for (const message of result.messages) {
       if (durableFactScore(message) < 3) continue;
-      const existing = facts.indexOf(message);
+      const key = messageKey(message);
+      const existing = facts.findIndex((fact) => messageKey(fact) === key);
       if (existing >= 0) facts.splice(existing, 1);
       facts.push(message);
     }
-    while (facts.length > 40 || facts.reduce((sum, message) => sum + message.length, 0) > 8_000) facts.shift();
+    const boundedFacts = boundedTail(facts, 40, 8_000);
     this.snapshots.delete(result.chat);
-    this.snapshots.set(result.chat, { history: history.slice(-4), memory, facts });
+    this.snapshots.set(result.chat, { history: history.slice(-4), memory, facts: boundedFacts });
     while (this.snapshots.size > 8) this.snapshots.delete(this.snapshots.keys().next().value);
   }
 
@@ -270,8 +286,8 @@ export class NativeBridge {
     const evidence = uniqueLatest([...(cached.facts ?? []), ...memory]);
     const querySet = new Set(query.flatMap((message) => [...semanticTerms(message)]));
     const queryConcepts = new Set([...querySet].filter((term) => term.startsWith("@")));
-    const queryMessages = new Set(query);
-    const candidates = evidence.map((message, index) => ({ message, index, terms: semanticTerms(message) })).filter(({ message }) => !queryMessages.has(message));
+    const queryMessages = new Set(query.map(messageKey));
+    const candidates = evidence.map((message, index) => ({ message, index, terms: semanticTerms(message) })).filter(({ message }) => !queryMessages.has(messageKey(message)));
     if (!candidates.length) return [];
     const selected = new Map([[candidates.at(-1).index, candidates.at(-1)]]);
     const frequency = new Map();
@@ -286,7 +302,7 @@ export class NativeBridge {
         const weight = term.startsWith("@") || /^\d/.test(term) ? 4 : /^[a-z]/.test(term) ? 3 : 2;
         score += weight * rarity;
       }
-      if (matches) score += Math.min(2, durableFactScore(candidate.message) / 3);
+      if (matches) score += Math.min(2, durableFactScore(candidate.message, candidate.terms) / 3);
       return { ...candidate, score: score + candidate.index / Math.max(1, evidence.length) };
     }).sort((left, right) => right.score - left.score || right.index - left.index);
     const conflictsWithNewer = (candidate) => {
@@ -315,8 +331,13 @@ export class NativeBridge {
       if (selected.size >= wanted || conflictsWithNewer(candidate)) return;
       selected.set(candidate.index, candidate);
     };
-    for (const candidate of ranked) if (candidate.score >= 1) addCandidate(candidate);
-    for (let index = candidates.length - 2; index >= 0 && selected.size < wanted; index -= 1) addCandidate(candidates[index]);
+    const relevant = ranked.filter((candidate) => candidate.score >= 1);
+    for (const candidate of relevant) addCandidate(candidate);
+    // If local retrieval found useful evidence, the newest line already provides
+    // continuity; padding the quota with unrelated lines only spends model tokens.
+    // For generic messages with no lexical/concept match, preserve the requested
+    // continuity depth exactly as before.
+    if (!relevant.length) for (let index = candidates.length - 2; index >= 0 && selected.size < wanted; index -= 1) addCandidate(candidates[index]);
     const ordered = candidates.filter(({ index }) => selected.has(index)).map(({ message }) => message);
     const recent = candidates.at(-1).message;
     if (recent.length >= 1_600) return [recent];
@@ -390,7 +411,7 @@ export class NativeBridge {
         projected.delta = true;
       } else if (previous?.signature === after) {
         let overlap = Math.min(previous.messages.length, fullMessages.length);
-        while (overlap > 0 && previous.messages.slice(-overlap).join("\n") !== fullMessages.slice(0, overlap).join("\n")) overlap -= 1;
+        while (overlap > 0 && previous.messages.slice(-overlap).some((message, index) => messageKey(message) !== messageKey(fullMessages[index]))) overlap -= 1;
         projected.messages = fullMessages.slice(overlap);
         projected.context = this.#smartContext(result.chat, projected.messages, context, previous.messages);
         projected.delta = true;

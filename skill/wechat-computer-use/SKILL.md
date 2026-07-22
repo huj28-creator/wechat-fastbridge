@@ -22,7 +22,7 @@ The bridge opens the requested chat automatically, tolerates a small typo, ignor
 ## Read, answer, continue
 
 1. Read 4–8 messages before sending. Pass the returned `signature` as `after` on later reads.
-2. Trust the default smart context: it combines recent continuity with older relevant facts using words, Chinese bigrams, concepts, numbers, rarity, and recency. A bounded fact capsule keeps high-signal prices, dates, addresses, orders, contacts, and confirmed decisions after ordinary chat scrolls out; newer conflicting numbers suppress stale ones. Use `context: 4` for complex commitments and `0` only when history cannot matter.
+2. Trust the default smart context: it combines recent continuity with older relevant facts using words, Chinese bigrams, concepts, numbers, rarity, and recency. The context number is a maximum: when relevant evidence exists, unrelated quota padding is omitted. A bounded fact capsule keeps high-signal prices, dates, addresses, orders, contacts, and confirmed decisions after ordinary chat scrolls out; newer conflicting numbers suppress stale ones. Use `context: 4` for complex commitments and `0` only when history cannot matter.
 3. Answer only the current delta and relevant evidence. Do not revive stale topics.
 4. Send immediately after deciding. Confirm text only when `inputCleared` is true; confirm media only when `deliveryConfirmed` is true.
 5. Save returned signatures. Unchanged reads return no messages, so do not request the full history again.
