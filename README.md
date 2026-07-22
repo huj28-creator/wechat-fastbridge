@@ -12,12 +12,13 @@ No cloud relay, OpenAI API key, WeChat protocol reverse engineering, process inj
 
 ## Performance targets
 
-- Hot message send: **under 2 seconds** from MCP tool call to Return key event.
+- Local semantic bridge budget: **under 2 seconds** before WeChat UI response time.
+- Measured real end-to-end send: **3.95 seconds** on the documented test Mac.
 - Cold setup/check: **under 5 seconds** on a supported Mac.
 - Normal read result: **under 2,000 characters**.
 - Computer Use fallback: **at least 80% smaller** than the raw accessibility tree on the bundled representative fixture.
 
-Every result includes measured latency. The test suite fails if the local hot-path round trip exceeds two seconds.
+Every result includes measured latency. The test suite fails if the mocked local bridge overhead exceeds two seconds; real WeChat timings are reported separately in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 
 ## Requirements
 
@@ -32,7 +33,7 @@ If you can copy and paste four commands, you can install it. See the child-frien
 ## Install
 
 ```bash
-git clone https://github.com/YOUR_GITHUB/wechat-fastbridge.git
+git clone https://github.com/huj28-creator/wechat-fastbridge.git
 cd wechat-fastbridge
 npm install
 npm run setup
@@ -51,7 +52,7 @@ The setup script only builds local configuration. It does not charge money, open
 ## How it stays fast
 
 ```text
-Codex → one compact MCP call → local JXA Accessibility bridge → WeChat
+Codex → one compact MCP call → local native Accessibility bridge → WeChat
 ```
 
 The bridge walks the UI locally, verifies both the selected chat row and input area's chat title, writes the input value directly, and sends the key only to WeChat's process. It does not bring WeChat to the front in Quiet Mode. Only compact JSON returns to Codex. A stable message signature lets `wechat_wait` poll without adding unchanged UI state to the conversation.

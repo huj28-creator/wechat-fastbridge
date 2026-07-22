@@ -30,10 +30,17 @@ export class NativeBridge {
       return result;
     } catch (error) {
       const raw = String(error.stderr || "").trim();
-      const embedded = raw.match(/\{\"ok\":false,\"error\":\"[^\"]+\",\"detail\":\"[^\"]*\"\}/)?.[0];
-      if (embedded) {
-        const parsed = JSON.parse(embedded);
-        throw Object.assign(new Error(parsed.error), parsed);
+      const jsonStart = raw.indexOf("{");
+      const jsonEnd = raw.lastIndexOf("}");
+      if (jsonStart !== -1 && jsonEnd > jsonStart) {
+        try {
+          const parsed = JSON.parse(raw.slice(jsonStart, jsonEnd + 1));
+          if (parsed && parsed.ok === false && parsed.error) {
+            throw Object.assign(new Error(parsed.error), parsed);
+          }
+        } catch (parseError) {
+          if (parseError?.error) throw parseError;
+        }
       }
       throw new Error(raw || error.message);
     }

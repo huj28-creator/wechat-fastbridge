@@ -168,54 +168,12 @@ static NSString *Option(NSArray<NSString *> *args, NSString *name) {
     return index != NSNotFound && index + 1 < args.count ? args[index + 1] : nil;
 }
 
-static void PostKey(CGEventSourceRef source, CGKeyCode key, CGEventFlags flags) {
-    CGEventRef down = CGEventCreateKeyboardEvent(source, key, true);
-    CGEventRef up = CGEventCreateKeyboardEvent(source, key, false);
-    CGEventSetFlags(down, flags); CGEventSetFlags(up, flags);
-    CGEventPost(kCGHIDEventTap, down); CGEventPost(kCGHIDEventTap, up);
-    CFRelease(down); CFRelease(up);
-}
-
 static void PostKeyToPid(CGEventSourceRef source, pid_t pid, CGKeyCode key, CGEventFlags flags) {
     CGEventRef down = CGEventCreateKeyboardEvent(source, key, true);
     CGEventRef up = CGEventCreateKeyboardEvent(source, key, false);
     CGEventSetFlags(down, flags); CGEventSetFlags(up, flags);
     CGEventPostToPid(pid, down); CGEventPostToPid(pid, up);
     CFRelease(down); CFRelease(up);
-}
-
-static id ParentTableObject(AXUIElementRef element) {
-    id current = (__bridge id)element;
-    for (NSUInteger depth = 0; depth < 8; depth++) {
-        id parent = AXAttr((__bridge AXUIElementRef)current, kAXParentAttribute);
-        if (!parent) return nil;
-        NSString *role = AXString((__bridge AXUIElementRef)parent, kAXRoleAttribute);
-        if ([role isEqualToString:(__bridge NSString *)kAXTableRole]) return parent;
-        current = parent;
-    }
-    return nil;
-}
-
-static void OpenExactChat(NSRunningApplication *app, NSString *chat) {
-    [app activateWithOptions:0];
-    CGEventSourceRef source = CGEventSourceCreate(kCGEventSourceStateCombinedSessionState);
-    PostKey(source, 3, kCGEventFlagMaskCommand);
-    usleep(120000);
-    PostKey(source, 0, kCGEventFlagMaskCommand);
-    usleep(40000);
-    NSUInteger length = chat.length;
-    UniChar *characters = calloc(length, sizeof(UniChar));
-    [chat getCharacters:characters range:NSMakeRange(0, length)];
-    CGEventRef typeDown = CGEventCreateKeyboardEvent(source, 0, true);
-    CGEventRef typeUp = CGEventCreateKeyboardEvent(source, 0, false);
-    CGEventKeyboardSetUnicodeString(typeDown, length, characters);
-    CGEventKeyboardSetUnicodeString(typeUp, length, characters);
-    CGEventPost(kCGHIDEventTap, typeDown); CGEventPost(kCGHIDEventTap, typeUp);
-    CFRelease(typeDown); CFRelease(typeUp); free(characters);
-    usleep(220000);
-    PostKey(source, 36, 0);
-    CFRelease(source);
-    usleep(900000);
 }
 
 int main(int argc, const char *argv[]) {
@@ -297,17 +255,9 @@ int main(int argc, const char *argv[]) {
         NSMutableArray *inspectInputs = [NSMutableArray array];
         NSMutableArray *inspectText = [NSMutableArray array];
         NSMutableArray *inspectRight = [NSMutableArray array];
-        NSDictionary *targetRow = nil;
-        AXError selectionSetError = kAXErrorSuccess;
-        AXError selectionPressError = kAXErrorSuccess;
         for (NSDictionary *node in nodes) {
             NSString *role = node[@"role"];
             NSArray<NSString *> *strings = node[@"strings"];
-            if (!targetRow && [role isEqualToString:(__bridge NSString *)kAXRowRole]) {
-                for (NSString *value in strings) {
-                    if ([value isEqualToString:chat] || [value hasPrefix:[chat stringByAppendingString:@","]]) { targetRow = node; break; }
-                }
-            }
             if (strings.count && inspectText.count < 120) {
                 NSRect inspectFrame = [node[@"frame"] rectValue];
                 [inspectText addObject:@{@"role": role, @"strings": strings,
@@ -339,41 +289,6 @@ int main(int argc, const char *argv[]) {
                     if (inspectRight.count < 40) [inspectRight addObject:@{@"role": role, @"value": value}];
                 }
             }
-        }
-        if ((!selectedMatched || !headerMatched) && targetRow &&
-            ([command isEqualToString:@"send"] || [command isEqualToString:@"select"])) {
-            AXUIElementRef rowElement = (__bridge AXUIElementRef)targetRow[@"element"];
-            id tableObject = ParentTableObject(rowElement);
-            selectionSetError = tableObject ? AXUIElementSetAttributeValue(
-                (__bridge AXUIElementRef)tableObject, kAXSelectedRowsAttribute, (__bridge CFArrayRef)@[targetRow[@"element"]]
-            ) : kAXErrorNoValue;
-            NSRect rowFrame = [targetRow[@"frame"] rectValue];
-            CGFloat screenTop = NSMaxY(NSScreen.mainScreen.frame);
-            CGPoint clickPoint = CGPointMake(NSMidX(rowFrame), screenTop - NSMidY(rowFrame));
-            CGEventRef mouseDown = CGEventCreateMouseEvent(NULL, kCGEventLeftMouseDown, clickPoint, kCGMouseButtonLeft);
-            CGEventRef mouseUp = CGEventCreateMouseEvent(NULL, kCGEventLeftMouseUp, clickPoint, kCGMouseButtonLeft);
-            CGEventPostToPid(app.processIdentifier, mouseDown); CGEventPostToPid(app.processIdentifier, mouseUp);
-            CFRelease(mouseDown); CFRelease(mouseUp);
-            AXError selectError = kAXErrorSuccess;
-            if (selectError == kAXErrorSuccess) {
-                for (NSUInteger attempt = 0; attempt < 12; attempt++) {
-                    usleep(100000);
-                    selectedMatched = AXBool(rowElement, kAXSelectedAttribute);
-                    headerMatched = NO;
-                    if (input) for (NSString *value in AXStrings((__bridge AXUIElementRef)input[@"element"])) {
-                        if (ExactHeader(value, chat)) headerMatched = YES;
-                    }
-                    if (selectedMatched && headerMatched) break;
-                }
-            }
-        }
-        if ([command isEqualToString:@"select"] && selectedMatched && headerMatched) {
-            Emit(@{@"ok": @YES, @"chat": chat, @"selected": @YES,
-                   @"latencyMs": @(-started.timeIntervalSinceNow * 1000)}, stdout);
-            return 0;
-        }
-        if ([command isEqualToString:@"select"] && (!selectedMatched || !headerMatched)) {
-            Fail(@"WECHAT_SELECT_FAILED", [NSString stringWithFormat:@"set=%d press=%d selected=%d header=%d", selectionSetError, selectionPressError, selectedMatched, headerMatched]);
         }
         if ([command isEqualToString:@"inspect"]) {
             Emit(@{@"ok": @YES, @"chat": chat, @"scanMs": @(-started.timeIntervalSinceNow * 1000),

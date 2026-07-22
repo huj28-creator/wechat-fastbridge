@@ -14,7 +14,7 @@ This guide is written so a student can follow it. Nothing here costs money.
 Open Terminal. Paste these commands one line at a time:
 
 ```bash
-git clone https://github.com/YOUR_GITHUB/wechat-fastbridge.git
+git clone https://github.com/huj28-creator/wechat-fastbridge.git
 cd wechat-fastbridge
 npm install
 npm run setup
