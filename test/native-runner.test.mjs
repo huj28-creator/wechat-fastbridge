@@ -84,6 +84,14 @@ test("native bridge round trip remains below the 2 second hot-path budget", asyn
   assert.ok(result.roundTripMs < 2_000, JSON.stringify(result));
 });
 
+test("non-macOS registry checks get an honest platform status without spawning the native bridge", async () => {
+  const bridge = new NativeBridge({ platform: "linux", binary: "/missing/wechat-ax" });
+  const result = await bridge.status();
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "MACOS_REQUIRED");
+  assert.match(result.detail, /requires macOS/);
+});
+
 test("native bridge returns compact semantic messages", async () => {
   const bridge = await fakeBridge();
   const result = await bridge.read({ chat: "lab", limit: 4, autoSelect: false, allowFocus: false });

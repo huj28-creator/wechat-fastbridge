@@ -60,11 +60,13 @@ const chatNamesClose = (left, right) => {
 export class NativeBridge {
   constructor({
     binary = process.env.WECHAT_AX_BINARY || defaultBinary,
+    platform = process.platform,
     timeoutMs = 5_000,
     system = {},
     delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   } = {}) {
     this.binary = binary;
+    this.platform = platform;
     this.timeoutMs = timeoutMs;
     this.system = system;
     this.delay = delay;
@@ -106,7 +108,16 @@ export class NativeBridge {
     }
   }
 
-  status() { return this.run("status"); }
+  status() {
+    if (this.platform !== "darwin") {
+      return Promise.resolve({
+        ok: false,
+        error: "MACOS_REQUIRED",
+        detail: "MCP introspection is available here, but WeChat automation requires macOS with WeChat Desktop and Accessibility permission",
+      });
+    }
+    return this.run("status");
+  }
   select({ chat }) { return this.run("select", ["--chat", chat]); }
   #readRaw({ chat, limit = 8 }) { return this.run("snapshot", ["--chat", chat, "--limit", String(limit)]); }
   #inboxRaw({ chats, limit = 12 }) {

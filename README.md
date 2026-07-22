@@ -34,6 +34,8 @@ Every result includes measured latency. The test suite fails if the mocked local
 - macOS 13 or newer
 - WeChat for Mac (`com.tencent.xinWeChat`)
 - Node.js 20 or newer
+
+The included Dockerfile exists only so MCP registries can start the stdio server and inspect its tool schemas. The container reports `MACOS_REQUIRED` for runtime checks; real WeChat reading and sending still require macOS, WeChat Desktop, and Accessibility permission.
 - Codex desktop, CLI, or IDE extension
 - macOS Accessibility permission for the app that runs Codex
 
