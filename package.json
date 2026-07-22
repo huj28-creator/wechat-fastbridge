@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build:native": "clang -O2 -fobjc-arc -arch arm64 -arch x86_64 -framework Cocoa -framework ApplicationServices bridge/native/wechat_ax.m -o bridge/native/wechat-ax",
+    "doctor": "node scripts/doctor.mjs",
     "setup": "node scripts/setup.mjs",
     "test": "node --test test/*.test.mjs",
     "start": "node bridge/server.mjs"

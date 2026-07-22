@@ -12,4 +12,19 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - run: npm ci
       - run: npm test
+      - run: npm audit --omit=dev
+
+  native-build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npm run build:native
+      - run: file bridge/native/wechat-ax | grep -q "universal binary"
+      - run: npm test
+      - run: npm audit --omit=dev

@@ -113,14 +113,14 @@ export function createWechatController({ sky, app = DEFAULT_APP } = {}) {
     await sky.press_key({ app, key: "Return" });
 
     if (!verify) {
-      return { ok: true, targetChat, sent: text, before: before.signature };
+      return { ok: true, targetChat, sentChars: text.length, before: before.signature };
     }
 
     const after = await state({ targetChat, limit, disableDiff: false });
     return {
       ok: after.messages.some((message) => message.includes(`我说:${text}`)) || after.selected?.includes(text) || false,
       targetChat,
-      sent: text,
+      sentChars: text.length,
       signature: after.signature,
       messages: after.messages,
       stats: after.stats,

@@ -6,7 +6,7 @@
 2. Copy `skill/wechat-computer-use` into `~/.codex/skills/`.
 3. Restart Codex so it discovers the STDIO MCP server.
 4. Open WeChat and grant Accessibility permission to Codex or the terminal host in System Settings → Privacy & Security → Accessibility.
-5. Open and select the exact chat before sending.
+5. Open WeChat. FastBridge selects the exact requested chat automatically.
 
 This path is free. It needs no App Store membership, cloud server, API key, Xcode build, or code-signing purchase.
 
@@ -15,7 +15,9 @@ This path is free. It needs no App Store membership, cloud server, API key, Xcod
 - `ACCESSIBILITY_PERMISSION_REQUIRED` or `-25211`: enable Accessibility, quit and reopen the host app, then retry status.
 - `WECHAT_NOT_RUNNING`: open WeChat.
 - `WECHAT_WINDOW_NOT_FOUND`: return to the main WeChat chat window.
-- `WECHAT_TARGET_MISMATCH`: select the exact requested chat. Never guess a similarly named chat.
+- `WECHAT_TARGET_MISMATCH`: the chat changed during verification; stop rather than guessing or fighting the user's interaction.
+- `WECHAT_AUTO_SELECT_FAILED`: confirm the exact title exists and WeChat's main window is open.
+- `WECHAT_AMBIGUOUS_CHAT`: more than one result has the exact same title; rename or disambiguate the chat before sending.
 - `WECHAT_INPUT_NOT_FOUND`: close viewers/dialogs and return to the main chat.
 - timeout: call status once; do not retry a send until delivery is known.
 

@@ -1,4 +1,7 @@
 node_modules/
 .DS_Store
+promo/rendered/
+promo/*.wav
+promo/*.mp4
 coverage/
 dist/

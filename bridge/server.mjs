@@ -5,6 +5,15 @@ import { z } from "zod";
 import { NativeBridge } from "./native-runner.mjs";
 
 const bridge = new NativeBridge();
+let operationTail = Promise.resolve();
+
+async function exclusive(operation) {
+  const previous = operationTail;
+  let release;
+  operationTail = new Promise((resolve) => { release = resolve; });
+  await previous;
+  try { return await operation(); } finally { release(); }
+}
 const server = new McpServer(
   { name: "wechat-fastbridge", version: "1.0.0" },
   {
@@ -13,8 +22,11 @@ const server = new McpServer(
 );
 
 function reply(value) {
+  const summary = value.ok === false
+    ? { ok: false, error: value.error, detail: value.detail }
+    : { ok: true, chat: value.chat, changed: value.changed, inputCleared: value.inputCleared };
   return {
-    content: [{ type: "text", text: JSON.stringify(value) }],
+    content: [{ type: "text", text: JSON.stringify(summary) }],
     structuredContent: value,
   };
 }
@@ -24,27 +36,31 @@ server.registerTool("wechat_status", {
   description: "Check that WeChat is running and macOS Accessibility permission is enabled.",
   inputSchema: {},
   annotations: { readOnlyHint: true, openWorldHint: false },
-}, async () => reply(await bridge.status()));
+}, async () => exclusive(async () => reply(await bridge.status())));
 
 server.registerTool("wechat_read", {
   title: "Read recent WeChat messages",
-  description: "Return only recent semantic messages from the exact currently selected WeChat chat.",
+  description: "Automatically open the exact chat when needed, then return only its recent semantic messages.",
   inputSchema: {
     chat: z.string().min(1).describe("Exact WeChat chat title"),
     limit: z.number().int().min(1).max(20).default(8),
+    autoSelect: z.boolean().default(true).describe("Automatically find and open the exact chat"),
+    allowFocus: z.boolean().default(true).describe("Briefly focus WeChat if background selection is blocked"),
   },
   annotations: { readOnlyHint: true, openWorldHint: true },
-}, async ({ chat, limit }) => reply(await bridge.read({ chat, limit })));
+}, async ({ chat, limit, autoSelect, allowFocus }) => exclusive(async () => reply(await bridge.read({ chat, limit, autoSelect, allowFocus }))));
 
 server.registerTool("wechat_send", {
   title: "Send a WeChat message",
-  description: "Verify the exact selected chat, write one non-empty message, and press Return using the native bridge.",
+  description: "Automatically locate and verify the exact chat, send one non-empty message, then restore the previous app. Background selection is attempted first; a brief focus fallback is enabled by default for WeChat 4.x reliability.",
   inputSchema: {
     chat: z.string().min(1).describe("Exact WeChat chat title"),
     text: z.string().min(1).max(8_000).describe("Message to send"),
+    autoSelect: z.boolean().default(true).describe("Automatically find and open the exact chat"),
+    allowFocus: z.boolean().default(true).describe("Briefly focus WeChat when macOS blocks background confirmation, then restore the previous app"),
   },
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
-}, async ({ chat, text }) => reply(await bridge.send({ chat, text })));
+}, async ({ chat, text, autoSelect, allowFocus }) => exclusive(async () => reply(await bridge.send({ chat, text, autoSelect, allowFocus }))));
 
 server.registerTool("wechat_wait", {
   title: "Wait for a WeChat reply",
@@ -56,6 +72,6 @@ server.registerTool("wechat_wait", {
     limit: z.number().int().min(1).max(20).default(8),
   },
   annotations: { readOnlyHint: true, openWorldHint: true },
-}, async ({ chat, after, timeoutMs, limit }) => reply(await bridge.wait({ chat, after, timeoutMs, limit })));
+}, async ({ chat, after, timeoutMs, limit }) => exclusive(async () => reply(await bridge.wait({ chat, after, timeoutMs, limit }))));
 
 await server.connect(new StdioServerTransport());

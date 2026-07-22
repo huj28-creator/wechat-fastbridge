@@ -13,7 +13,7 @@ No cloud relay, OpenAI API key, WeChat protocol reverse engineering, process inj
 ## Performance targets
 
 - Local semantic bridge budget: **under 2 seconds** before WeChat UI response time.
-- Measured real end-to-end send: **3.95 seconds** on the documented test Mac.
+- Measured real optimized selected-chat send: **1.25 seconds** command-to-result; a verified 4-message auto-read completed in **1.38 seconds**.
 - Cold setup/check: **under 5 seconds** on a supported Mac.
 - Normal read result: **under 2,000 characters**.
 - Computer Use fallback: **at least 80% smaller** than the raw accessibility tree on the bundled representative fixture.
@@ -41,7 +41,7 @@ npm run setup
 
 Or download the repository and double-click `install.command`.
 
-Restart Codex after setup. Open the exact WeChat chat you want to use, then ask:
+Restart Codex after setup. Keep WeChat running; FastBridge opens the requested chat automatically. Then ask:
 
 ```text
 Use $wechat-computer-use to tell “Exact Chat Name”: hello
@@ -49,13 +49,15 @@ Use $wechat-computer-use to tell “Exact Chat Name”: hello
 
 The setup script only builds local configuration. It does not charge money, open a subscription, or publish anything.
 
+Run `npm run doctor` at any time to check Node, the native bridge, Codex registration, the installed skill, Accessibility permission, and whether WeChat is running. The check never sends a message.
+
 ## How it stays fast
 
 ```text
 Codex → one compact MCP call → local native Accessibility bridge → WeChat
 ```
 
-The bridge walks the UI locally, verifies both the selected chat row and input area's chat title, writes the input value directly, and sends the key only to WeChat's process. It does not bring WeChat to the front in Quiet Mode. Only compact JSON returns to Codex. A stable message signature lets `wechat_wait` poll without adding unchanged UI state to the conversation.
+The bridge automatically locates the exact chat, verifies both its selected row and input area's chat title, writes the input value directly, and verifies that sending cleared the input. It tries background control first; when WeChat 4.x blocks background confirmation, it briefly focuses WeChat and restores the previous app. Only compact JSON returns to Codex. A stable message signature lets `wechat_wait` poll without adding unchanged UI state to the conversation.
 
 ## Safety and privacy
 
@@ -82,7 +84,7 @@ This repository is MIT licensed and free to install from GitHub. It deliberately
 
 - macOS only for the first release.
 - WeChat UI changes can require selector updates.
-- Quiet Mode requires the requested chat to already be open and selected. This prevents screen stealing and wrong-chat sends.
+- Automatic selection may briefly show WeChat because its custom result rows do not expose a reliable background press action. No manual chat click is required.
 - Accessibility permission must be granted manually in System Settings.
 
 ## License

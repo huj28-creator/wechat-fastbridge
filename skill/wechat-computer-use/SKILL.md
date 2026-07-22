@@ -10,12 +10,14 @@ Control WeChat through compact semantic MCP tools. Use Computer Use only as fall
 ## Fast Path
 
 1. If `wechat_status`, `wechat_read`, `wechat_send`, and `wechat_wait` are available, use them directly.
-2. Pin the exact chat title supplied by the user.
-3. Keep the target chat selected in WeChat for Quiet Mode; do not bring WeChat to the foreground.
+2. Pin the exact chat title supplied by the user; the bridge automatically locates and opens it.
+3. Let the bridge attempt the background path first. WeChat 4.x may briefly focus for exact-result selection, then restores the previous app automatically.
 4. Call `wechat_read` immediately before `wechat_send`; keep reads at 4–8 messages.
 5. Do not add narration or another UI inspection between the user's send command and `wechat_send`.
 6. Confirm success only when `inputCleared` is true. Use returned latency measurements; normal sends should finish within seconds.
 7. Use `wechat_wait` with the last signature to wait without returning unchanged state.
+8. Keep `autoSelect: true` and `allowFocus: true` for normal use. Set `allowFocus: false` only when the user explicitly prefers a background-only attempt that may fail.
+9. Never issue WeChat tools in parallel; the MCP server serializes operations to prevent cross-chat races.
 
 Read [references/setup.md](references/setup.md) for installation and recovery.
 
@@ -52,7 +54,7 @@ var r = await wx.send({ targetChat: "exact chat name", text: "message" });
 nodeRepl.write(r);
 ```
 
-Both paths must reject a different chat, missing input box, viewer window, lock screen, or stale UI. Re-query after any `USER_CHANGED_APP`, capture, or stale-element error. Never fight the user's live interaction.
+Both paths must reject a different chat, missing input box, viewer window, lock screen, or stale UI. Re-query after any `USER_CHANGED_APP`, capture, or stale-element error. If the user changes chats during automation, stop rather than switching back repeatedly.
 
 ## Continue a Conversation
 

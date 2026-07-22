@@ -25,8 +25,9 @@ test("MCP server exposes the fast semantic WeChat tools", async () => {
       listed.tools.map((tool) => tool.name).sort(),
       ["wechat_read", "wechat_send", "wechat_status", "wechat_wait"],
     );
-    const result = await client.callTool({ name: "wechat_send", arguments: { chat: "lab", text: "hello" } });
+    const result = await client.callTool({ name: "wechat_send", arguments: { chat: "lab", text: "hello", autoSelect: false, allowFocus: false } });
     assert.equal(result.structuredContent.ok, true);
+    assert.equal(result.content[0].text, '{"ok":true,"chat":"lab"}');
     assert.ok(JSON.stringify(result).length < 700);
   } finally {
     await transport.close();

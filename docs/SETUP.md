@@ -41,7 +41,7 @@ FastBridge does not need Screen Recording in normal mode. The optional Computer 
 
 ## 3. Check that it works
 
-Open WeChat and select the exact chat you want. Keep it selected; WeChat may stay behind another app.
+Open WeChat once. You do not need to select the target chat; FastBridge searches and opens the exact title automatically.
 
 In Codex, ask:
 
@@ -52,20 +52,26 @@ Use $wechat-computer-use to check WeChat FastBridge.
 Then send a harmless test to yourself:
 
 ```text
-Use $wechat-computer-use to send “hello from Codex” to “File Transfer”.
+Use $wechat-computer-use to send “hello from Codex” to “your own exact self-chat name”.
 ```
 
-FastBridge refuses to send if the selected chat name is different.
+FastBridge refuses to send unless both the selected row and right-pane title match the requested chat exactly.
+
+You can check installation and permissions without sending anything:
+
+```bash
+npm run doctor
+```
 
 ## 4. Use Quiet Mode
 
-Quiet Mode means WeChat does not jump in front of your work.
+Quiet Mode uses background control whenever WeChat permits it.
 
-1. Select one chat in WeChat once.
-2. Switch back to your work.
-3. Ask Codex to read, wait, or send in that exact chat.
+1. Keep WeChat running.
+2. Ask Codex to read, wait, or send in an exact chat title.
+3. FastBridge searches automatically. WeChat 4.x may appear briefly while the exact result is confirmed, then the previous app is restored.
 
-Automatic background switching between chats is disabled because WeChat does not expose a safe background selection action. This is intentional: no screen stealing and fewer wrong-chat mistakes.
+No manual chat selection is required. To forbid even a brief focus fallback, advanced callers may set `allowFocus: false`; automatic selection can then fail when WeChat blocks background confirmation.
 
 ## 5. Permission and approval settings
 
@@ -75,7 +81,7 @@ FastBridge only needs:
 
 | Permission | Why | Required? |
 | --- | --- | --- |
-| Accessibility | Read the selected chat title and control its input box | Yes |
+| Accessibility | Search chats, verify titles, and control the input box | Yes |
 | Screen Recording | Computer Use fallback screenshots | No for FastBridge |
 | Files and Folders | Install the local skill and MCP files | During setup only |
 | Network | None for WeChat control | No |
@@ -86,7 +92,7 @@ It does not need your WeChat password, Apple ID password, contacts export, micro
 
 - **ACCESSIBILITY_PERMISSION_REQUIRED**: repeat step 2, then restart Codex.
 - **WECHAT_NOT_RUNNING**: open WeChat.
-- **WECHAT_TARGET_MISMATCH**: click the exact requested chat once.
+- **WECHAT_TARGET_MISMATCH**: the chat changed while FastBridge was checking it. Stop typing for a moment and retry with the exact title; no manual chat click is required.
 - **WECHAT_INPUT_NOT_FOUND**: close photo/video viewers and return to the chat window.
 - **WECHAT_SEND_SHORTCUT_UNKNOWN**: check the draft; FastBridge did not claim success.
 - **Message stays in the input box**: update FastBridge and report your WeChat version in an issue.

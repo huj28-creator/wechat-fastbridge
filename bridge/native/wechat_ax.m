@@ -106,16 +106,26 @@ static NSDictionary *NodeAndChildren(AXUIElementRef element, NSArray **childrenO
     };
 }
 
-static NSArray<NSDictionary *> *Walk(AXUIElementRef root, NSUInteger limit) {
+static NSArray<NSDictionary *> *WalkMode(AXUIElementRef root, NSUInteger limit, NSInteger pruneMode, CGFloat splitX) {
     NSMutableArray *queue = [NSMutableArray arrayWithObject:(__bridge id)root];
     NSMutableArray *nodes = [NSMutableArray array];
     for (NSUInteger cursor = 0; cursor < queue.count && nodes.count < limit; cursor++) {
         AXUIElementRef element = (__bridge AXUIElementRef)queue[cursor];
         NSArray *children = nil;
-        [nodes addObject:NodeAndChildren(element, &children)];
-        [queue addObjectsFromArray:children ?: @[]];
+        NSDictionary *node = NodeAndChildren(element, &children);
+        [nodes addObject:node];
+        NSString *role = node[@"role"];
+        NSRect frame = [node[@"frame"] rectValue];
+        BOOL rowOrCell = [role isEqualToString:(__bridge NSString *)kAXRowRole] ||
+                         [role isEqualToString:(__bridge NSString *)kAXCellRole];
+        BOOL prune = rowOrCell && (pruneMode == 1 || (pruneMode == 2 && NSMidX(frame) < splitX));
+        if (!prune) [queue addObjectsFromArray:children ?: @[]];
     }
     return nodes;
+}
+
+static NSArray<NSDictionary *> *Walk(AXUIElementRef root, NSUInteger limit) {
+    return WalkMode(root, limit, 0, 0);
 }
 
 static NSArray<NSString *> *SubtreeStrings(AXUIElementRef element) {
@@ -163,6 +173,13 @@ static NSDictionary *AXDiagnostic(AXUIElementRef root, CFStringRef attribute) {
     return @{@"error": @(error), @"count": @(count)};
 }
 
+static NSArray *AXActions(AXUIElementRef element) {
+    CFArrayRef actions = NULL;
+    AXError error = AXUIElementCopyActionNames(element, &actions);
+    if (error != kAXErrorSuccess || !actions) return @[];
+    return CFBridgingRelease(actions);
+}
+
 static NSString *Option(NSArray<NSString *> *args, NSString *name) {
     NSUInteger index = [args indexOfObject:name];
     return index != NSNotFound && index + 1 < args.count ? args[index + 1] : nil;
@@ -174,6 +191,39 @@ static void PostKeyToPid(CGEventSourceRef source, pid_t pid, CGKeyCode key, CGEv
     CGEventSetFlags(down, flags); CGEventSetFlags(up, flags);
     CGEventPostToPid(pid, down); CGEventPostToPid(pid, up);
     CFRelease(down); CFRelease(up);
+}
+
+static void PostKeyGlobal(CGEventSourceRef source, CGKeyCode key, CGEventFlags flags) {
+    CGEventRef down = CGEventCreateKeyboardEvent(source, key, true);
+    CGEventRef up = CGEventCreateKeyboardEvent(source, key, false);
+    CGEventSetFlags(down, flags); CGEventSetFlags(up, flags);
+    CGEventPost(kCGHIDEventTap, down); CGEventPost(kCGHIDEventTap, up);
+    CFRelease(down); CFRelease(up);
+}
+
+static NSArray<NSPasteboardItem *> *CopyPasteboardItems(NSPasteboard *pasteboard) {
+    NSMutableArray *copies = [NSMutableArray array];
+    for (NSPasteboardItem *original in pasteboard.pasteboardItems ?: @[]) {
+        NSPasteboardItem *copy = [NSPasteboardItem new];
+        for (NSPasteboardType type in original.types) {
+            NSData *data = [original dataForType:type];
+            if (data) [copy setData:data forType:type];
+        }
+        [copies addObject:copy];
+    }
+    return copies;
+}
+
+static id ParentWithRole(AXUIElementRef element, CFStringRef wantedRole) {
+    id current = (__bridge id)element;
+    for (NSUInteger depth = 0; depth < 10; depth++) {
+        id parent = AXAttr((__bridge AXUIElementRef)current, kAXParentAttribute);
+        if (!parent) return nil;
+        NSString *role = AXString((__bridge AXUIElementRef)parent, kAXRoleAttribute);
+        if ([role isEqualToString:(__bridge NSString *)wantedRole]) return parent;
+        current = parent;
+    }
+    return nil;
 }
 
 int main(int argc, const char *argv[]) {
@@ -211,6 +261,9 @@ int main(int argc, const char *argv[]) {
         NSString *chat = Option(args, @"--chat");
         if (!chat.length) Fail(@"CHAT_REQUIRED", @"Pass the exact chat title");
         NSInteger limit = MAX(1, MIN(20, [Option(args, @"--limit") ?: @"8" integerValue]));
+        BOOL fastScan = [command isEqualToString:@"search"] || [command isEqualToString:@"select"] ||
+                        [command isEqualToString:@"send"] || [command isEqualToString:@"inspect-fast"];
+        NSInteger pruneMode = fastScan ? 1 : ([command isEqualToString:@"snapshot"] ? 2 : 0);
         NSArray<NSDictionary *> *nodes = nil;
         NSDictionary *window = nil;
         for (NSRunningApplication *candidate in apps) {
@@ -219,15 +272,19 @@ int main(int argc, const char *argv[]) {
             NSMutableArray<NSDictionary *> *candidateNodes = [NSMutableArray array];
             if ([windowElements isKindOfClass:NSArray.class]) {
                 for (id windowElement in windowElements) {
-                    [candidateNodes addObjectsFromArray:Walk((__bridge AXUIElementRef)windowElement, 1200 - candidateNodes.count)];
+                    CGFloat splitX = NSMidX(AXFrame((__bridge AXUIElementRef)windowElement));
+                    [candidateNodes addObjectsFromArray:WalkMode((__bridge AXUIElementRef)windowElement, 1200 - candidateNodes.count, pruneMode, splitX)];
                     if (candidateNodes.count >= 1200) break;
                 }
             }
             if (!candidateNodes.count) {
                 id focusedWindow = AXAttr(root, kAXFocusedWindowAttribute);
-                if (focusedWindow) [candidateNodes addObjectsFromArray:Walk((__bridge AXUIElementRef)focusedWindow, 1200)];
+                if (focusedWindow) {
+                    CGFloat splitX = NSMidX(AXFrame((__bridge AXUIElementRef)focusedWindow));
+                    [candidateNodes addObjectsFromArray:WalkMode((__bridge AXUIElementRef)focusedWindow, 1200, pruneMode, splitX)];
+                }
             }
-            if (!candidateNodes.count) [candidateNodes addObjectsFromArray:Walk(root, 1200)];
+            if (!candidateNodes.count) [candidateNodes addObjectsFromArray:WalkMode(root, 1200, pruneMode, 0)];
             CFRelease(root);
             for (NSDictionary *node in candidateNodes) {
                 if ([node[@"role"] isEqualToString:(__bridge NSString *)kAXWindowRole] && !NSEqualRects([node[@"frame"] rectValue], NSZeroRect)) {
@@ -253,11 +310,42 @@ int main(int argc, const char *argv[]) {
         NSMutableArray *inspectSelected = [NSMutableArray array];
         NSMutableArray *inspectHeaders = [NSMutableArray array];
         NSMutableArray *inspectInputs = [NSMutableArray array];
+        NSMutableArray *inspectAllFields = [NSMutableArray array];
         NSMutableArray *inspectText = [NSMutableArray array];
         NSMutableArray *inspectRight = [NSMutableArray array];
+        NSDictionary *targetRow = nil;
+        NSUInteger targetRowMatches = 0;
+        NSDictionary *searchField = nil;
         for (NSDictionary *node in nodes) {
             NSString *role = node[@"role"];
             NSArray<NSString *> *strings = node[@"strings"];
+            NSRect nodeFrame = [node[@"frame"] rectValue];
+            if ([role isEqualToString:(__bridge NSString *)kAXTextFieldRole] &&
+                !NSEqualRects(nodeFrame, NSZeroRect) && NSMidX(nodeFrame) < NSMidX(windowFrame) &&
+                NSMinY(nodeFrame) < NSMinY(windowFrame) + 140 &&
+                (!searchField || (![searchField[@"settable"] boolValue] && [node[@"settable"] boolValue]))) searchField = node;
+            if (([role isEqualToString:(__bridge NSString *)kAXTextAreaRole] ||
+                 [role isEqualToString:(__bridge NSString *)kAXTextFieldRole]) && inspectAllFields.count < 30) {
+                NSRect fieldFrame = [node[@"frame"] rectValue];
+                [inspectAllFields addObject:@{@"role": role, @"strings": strings,
+                    @"settable": node[@"settable"], @"x": @(fieldFrame.origin.x), @"y": @(fieldFrame.origin.y),
+                    @"w": @(fieldFrame.size.width), @"h": @(fieldFrame.size.height)}];
+            }
+            if ([role isEqualToString:(__bridge NSString *)kAXRowRole]) {
+                for (NSString *value in strings) {
+                    if ([value isEqualToString:chat] || [value hasPrefix:[chat stringByAppendingString:@","]]) {
+                        BOOL visibleExactRow = !NSEqualRects(nodeFrame, NSZeroRect) &&
+                            NSIntersectsRect(nodeFrame, windowFrame) &&
+                            NSMidX(nodeFrame) >= NSMinX(windowFrame) && NSMidX(nodeFrame) <= NSMaxX(windowFrame) &&
+                            NSMidY(nodeFrame) >= NSMinY(windowFrame) && NSMidY(nodeFrame) <= NSMaxY(windowFrame);
+                        if (visibleExactRow) {
+                            if (!targetRow) targetRow = node;
+                            targetRowMatches += 1;
+                        }
+                        break;
+                    }
+                }
+            }
             if (strings.count && inspectText.count < 120) {
                 NSRect inspectFrame = [node[@"frame"] rectValue];
                 [inspectText addObject:@{@"role": role, @"strings": strings,
@@ -290,9 +378,169 @@ int main(int argc, const char *argv[]) {
                 }
             }
         }
-        if ([command isEqualToString:@"inspect"]) {
+        if ([command isEqualToString:@"search"]) {
+            if (!searchField) Fail(@"WECHAT_SEARCH_FIELD_NOT_FOUND", chat);
+            AXUIElementRef fieldElement = (__bridge AXUIElementRef)searchField[@"element"];
+            NSRect fieldFrame = [searchField[@"frame"] rectValue];
+            CGPoint clickPoint = CGPointMake(NSMidX(fieldFrame), NSMidY(fieldFrame));
+            BOOL globalKeys = [args containsObject:@"--global-keys"];
+            BOOL noConfirm = [args containsObject:@"--no-confirm"];
+            BOOL initialWritableSearch = [searchField[@"settable"] boolValue];
+            if (globalKeys && ![NSWorkspace.sharedWorkspace.frontmostApplication.bundleIdentifier isEqualToString:@"com.tencent.xinWeChat"]) {
+                Fail(@"WECHAT_NOT_FRONTMOST", @"Focus WeChat before global search keys");
+            }
+            if (globalKeys) {
+                if (!initialWritableSearch) {
+                    CGEventRef mouseDown = CGEventCreateMouseEvent(NULL, kCGEventLeftMouseDown, clickPoint, kCGMouseButtonLeft);
+                    CGEventRef mouseUp = CGEventCreateMouseEvent(NULL, kCGEventLeftMouseUp, clickPoint, kCGMouseButtonLeft);
+                    CGEventPost(kCGHIDEventTap, mouseDown);
+                    CGEventPost(kCGHIDEventTap, mouseUp);
+                    CFRelease(mouseDown);
+                    CFRelease(mouseUp);
+                }
+            } else {
+                CGEventRef mouseDown = CGEventCreateMouseEvent(NULL, kCGEventLeftMouseDown, clickPoint, kCGMouseButtonLeft);
+                CGEventRef mouseUp = CGEventCreateMouseEvent(NULL, kCGEventLeftMouseUp, clickPoint, kCGMouseButtonLeft);
+                CGEventPostToPid(app.processIdentifier, mouseDown);
+                CGEventPostToPid(app.processIdentifier, mouseUp);
+                CFRelease(mouseDown);
+                CFRelease(mouseUp);
+            }
+            usleep(180000);
+            if (globalKeys) {
+                NSArray *refreshed = WalkMode((__bridge AXUIElementRef)window[@"element"], 500, 1, NSMidX(windowFrame));
+                BOOL foundWritableSearch = initialWritableSearch;
+                for (NSDictionary *candidate in refreshed) {
+                    NSString *candidateRole = candidate[@"role"];
+                    NSRect candidateFrame = [candidate[@"frame"] rectValue];
+                    if ([candidateRole isEqualToString:(__bridge NSString *)kAXTextFieldRole] &&
+                        [candidate[@"settable"] boolValue] && NSMidX(candidateFrame) < NSMidX(windowFrame) &&
+                        NSMinY(candidateFrame) < NSMinY(windowFrame) + 140) {
+                        fieldElement = (__bridge AXUIElementRef)candidate[@"element"];
+                        fieldFrame = candidateFrame;
+                        clickPoint = CGPointMake(NSMidX(fieldFrame), NSMidY(fieldFrame));
+                        foundWritableSearch = YES;
+                        break;
+                    }
+                }
+                if (!foundWritableSearch) Fail(@"WECHAT_SEARCH_INPUT_NOT_READY", chat);
+            }
+            AXError focusError = AXUIElementSetAttributeValue(fieldElement, kAXFocusedAttribute, kCFBooleanTrue);
+            if (globalKeys) {
+                if (focusError != kAXErrorSuccess || !AXBool(fieldElement, kAXFocusedAttribute)) {
+                    CGEventRef mouseDown = CGEventCreateMouseEvent(NULL, kCGEventLeftMouseDown, clickPoint, kCGMouseButtonLeft);
+                    CGEventRef mouseUp = CGEventCreateMouseEvent(NULL, kCGEventLeftMouseUp, clickPoint, kCGMouseButtonLeft);
+                    CGEventPost(kCGHIDEventTap, mouseDown);
+                    CGEventPost(kCGHIDEventTap, mouseUp);
+                    CFRelease(mouseDown);
+                    CFRelease(mouseUp);
+                    usleep(100000);
+                }
+                if (!AXBool(fieldElement, kAXFocusedAttribute)) Fail(@"WECHAT_SEARCH_INPUT_NOT_FOCUSED", chat);
+                NSPasteboard *pasteboard = NSPasteboard.generalPasteboard;
+                NSArray *savedItems = CopyPasteboardItems(pasteboard);
+                [pasteboard clearContents];
+                [pasteboard setString:chat forType:NSPasteboardTypeString];
+                NSInteger bridgePasteChange = pasteboard.changeCount;
+                CGEventSourceRef source = CGEventSourceCreate(kCGEventSourceStateCombinedSessionState);
+                PostKeyGlobal(source, 0, kCGEventFlagMaskCommand);
+                usleep(40000);
+                PostKeyGlobal(source, 9, kCGEventFlagMaskCommand);
+                CFRelease(source);
+                usleep(260000);
+                if (!noConfirm) {
+                    CGEventSourceRef confirmSource = CGEventSourceCreate(kCGEventSourceStateCombinedSessionState);
+                    PostKeyGlobal(confirmSource, 36, 0);
+                    CFRelease(confirmSource);
+                }
+                usleep(300000);
+                BOOL clipboardRestored = NO;
+                if (pasteboard.changeCount == bridgePasteChange) {
+                    [pasteboard clearContents];
+                    if (savedItems.count) [pasteboard writeObjects:savedItems];
+                    clipboardRestored = YES;
+                }
+                NSArray *query = @[];
+                NSArray *afterPaste = WalkMode((__bridge AXUIElementRef)window[@"element"], 500, 1, NSMidX(windowFrame));
+                for (NSDictionary *candidate in afterPaste) {
+                    NSString *candidateRole = candidate[@"role"];
+                    NSRect candidateFrame = [candidate[@"frame"] rectValue];
+                    if ([candidateRole isEqualToString:(__bridge NSString *)kAXTextFieldRole] &&
+                        [candidate[@"settable"] boolValue] && NSMidX(candidateFrame) < NSMidX(windowFrame) &&
+                        NSMinY(candidateFrame) < NSMinY(windowFrame) + 140) {
+                        query = candidate[@"strings"];
+                        break;
+                    }
+                }
+                Emit(@{@"ok": @YES, @"chat": chat, @"searchAttempted": @YES,
+                       @"globalKeys": @YES, @"focusError": @(focusError),
+                       @"query": query, @"queryVerified": @([query containsObject:chat]),
+                       @"clipboardRestored": @(clipboardRestored),
+                       @"x": @(clickPoint.x), @"y": @(clickPoint.y),
+                       @"latencyMs": @(-started.timeIntervalSinceNow * 1000)}, stdout);
+                return 0;
+            }
+            AXUIElementSetAttributeValue(fieldElement, kAXValueAttribute, (__bridge CFTypeRef)@"");
+            usleep(80000);
+            AXError valueError = AXUIElementSetAttributeValue(fieldElement, kAXValueAttribute, (__bridge CFTypeRef)chat);
+            usleep(160000);
+            Emit(@{@"ok": @YES, @"chat": chat, @"searchAttempted": @YES,
+                   @"focusError": @(focusError), @"valueError": @(valueError),
+                   @"x": @(clickPoint.x), @"y": @(clickPoint.y),
+                   @"latencyMs": @(-started.timeIntervalSinceNow * 1000)}, stdout);
+            return 0;
+        }
+        if ([command isEqualToString:@"select"]) {
+            BOOL globalClick = [args containsObject:@"--global-click"];
+            if (selectedMatched && headerMatched) {
+                Emit(@{@"ok": @YES, @"chat": chat, @"alreadySelected": @YES,
+                       @"latencyMs": @(-started.timeIntervalSinceNow * 1000)}, stdout);
+                return 0;
+            }
+            if (!targetRow) Fail(@"WECHAT_CHAT_NOT_VISIBLE", [@"Chat row is not currently loaded: " stringByAppendingString:chat]);
+            if (targetRowMatches > 1) Fail(@"WECHAT_AMBIGUOUS_CHAT", [@"Multiple exact-title rows: " stringByAppendingString:chat]);
+            AXUIElementRef rowElement = (__bridge AXUIElementRef)targetRow[@"element"];
+            AXError focusError = AXUIElementSetAttributeValue(rowElement, kAXFocusedAttribute, kCFBooleanTrue);
+            AXError selectedError = AXUIElementSetAttributeValue(rowElement, kAXSelectedAttribute, kCFBooleanTrue);
+            id tableElement = ParentWithRole(rowElement, kAXTableRole);
+            AXError selectedRowsError = tableElement ? AXUIElementSetAttributeValue(
+                (__bridge AXUIElementRef)tableElement, kAXSelectedRowsAttribute, (__bridge CFArrayRef)@[targetRow[@"element"]]
+            ) : kAXErrorNoValue;
+            AXError pressError = AXUIElementPerformAction(rowElement, kAXPressAction);
+            NSRect rowFrame = [targetRow[@"frame"] rectValue];
+            if (globalClick && (!NSIntersectsRect(rowFrame, windowFrame) || NSMidY(rowFrame) < NSMinY(windowFrame) || NSMidY(rowFrame) > NSMaxY(windowFrame))) {
+                Fail(@"WECHAT_SEARCH_RESULT_NOT_VISIBLE", chat);
+            }
+            CGPoint clickPoint = CGPointMake(NSMidX(rowFrame), NSMidY(rowFrame));
+            CGEventRef mouseMove = CGEventCreateMouseEvent(NULL, kCGEventMouseMoved, clickPoint, kCGMouseButtonLeft);
+            CGEventRef mouseDown = CGEventCreateMouseEvent(NULL, kCGEventLeftMouseDown, clickPoint, kCGMouseButtonLeft);
+            CGEventRef mouseUp = CGEventCreateMouseEvent(NULL, kCGEventLeftMouseUp, clickPoint, kCGMouseButtonLeft);
+            if (globalClick) {
+                CGEventPost(kCGHIDEventTap, mouseMove);
+                CGEventPost(kCGHIDEventTap, mouseDown);
+                CGEventPost(kCGHIDEventTap, mouseUp);
+            } else {
+                CGEventPostToPid(app.processIdentifier, mouseMove);
+                CGEventPostToPid(app.processIdentifier, mouseDown);
+                CGEventPostToPid(app.processIdentifier, mouseUp);
+            }
+            CFRelease(mouseMove);
+            CFRelease(mouseDown);
+            CFRelease(mouseUp);
+            Emit(@{@"ok": @YES, @"chat": chat, @"selectionAttempted": @YES,
+                   @"focusError": @(focusError), @"selectedError": @(selectedError),
+                   @"selectedRowsError": @(selectedRowsError), @"axPressError": @(pressError),
+                   @"rowActions": AXActions(rowElement),
+                   @"tableActions": tableElement ? AXActions((__bridge AXUIElementRef)tableElement) : @[],
+                   @"globalClick": @(globalClick),
+                   @"x": @(clickPoint.x), @"y": @(clickPoint.y),
+                   @"latencyMs": @(-started.timeIntervalSinceNow * 1000)}, stdout);
+            return 0;
+        }
+        if ([command isEqualToString:@"inspect"] || [command isEqualToString:@"inspect-fast"]) {
             Emit(@{@"ok": @YES, @"chat": chat, @"scanMs": @(-started.timeIntervalSinceNow * 1000),
                    @"selected": inspectSelected, @"rightPaneStaticText": inspectHeaders, @"inputs": inspectInputs,
+                   @"allFields": inspectAllFields,
                    @"textNodes": inspectText, @"rightPaneText": inspectRight,
                    @"selectedMatched": @(selectedMatched), @"headerMatched": @(headerMatched), @"nodeCount": @(nodes.count)}, stdout);
             return 0;
@@ -314,6 +562,7 @@ int main(int argc, const char *argv[]) {
             AXUIElementRef inputElement = (__bridge AXUIElementRef)input[@"element"];
             if (AXUIElementSetAttributeValue(inputElement, kAXFocusedAttribute, kCFBooleanTrue) != kAXErrorSuccess ||
                 AXUIElementSetAttributeValue(inputElement, kAXValueAttribute, (__bridge CFTypeRef)text) != kAXErrorSuccess) Fail(@"WECHAT_INPUT_WRITE_FAILED", chat);
+            if (!AXBool(inputElement, kAXFocusedAttribute)) Fail(@"WECHAT_INPUT_NOT_FOCUSED", chat);
             CGEventSourceRef source = CGEventSourceCreate(kCGEventSourceStateCombinedSessionState);
             NSString *shortcut = @"AXConfirm";
             AXUIElementPerformAction(inputElement, kAXConfirmAction);
@@ -341,7 +590,7 @@ int main(int argc, const char *argv[]) {
             if ([remaining stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length) {
                 Fail(@"WECHAT_SEND_SHORTCUT_UNKNOWN", @"Message remains in the input box; nothing was reported as sent");
             }
-            Emit(@{@"ok": @YES, @"chat": chat, @"sent": text, @"signature": signature,
+            Emit(@{@"ok": @YES, @"chat": chat, @"sentChars": @(text.length), @"signature": signature,
                    @"shortcut": shortcut, @"inputCleared": @YES,
                    @"latencyMs": @(-started.timeIntervalSinceNow * 1000)}, stdout);
             return 0;
