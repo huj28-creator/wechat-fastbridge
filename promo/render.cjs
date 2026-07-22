@@ -10,6 +10,7 @@ const frames = fps * seconds;
 const root = resolve(__dirname, "..");
 const output = resolve(process.argv[2] || resolve(root, "promo/wechat-fastbridge-promo.mp4"));
 const ffmpeg = process.env.FFMPEG_BIN || require("ffmpeg-static");
+const language = process.env.PROMO_LANG === "zh" ? "zh" : "en";
 if (!ffmpeg) throw new Error("Install ffmpeg-static or set FFMPEG_BIN to a local ffmpeg executable.");
 
 function writeSoundtrack(path) {
@@ -37,7 +38,9 @@ function writeSoundtrack(path) {
   const audio=resolve(__dirname,"promo-soundtrack.wav"); writeSoundtrack(audio);
   const browser=await chromium.launch({headless:true,executablePath:"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",args:["--hide-scrollbars","--force-device-scale-factor=1"]});
   const page=await browser.newPage({viewport:{width:1920,height:1080},deviceScaleFactor:1});
-  await page.goto(pathToFileURL(resolve(__dirname,"index.html")).href); await page.evaluate(()=>document.fonts.ready);
+  const sourceUrl = pathToFileURL(resolve(__dirname,"index.html"));
+  if(language === "zh") sourceUrl.searchParams.set("lang", "zh");
+  await page.goto(sourceUrl.href); await page.evaluate(()=>document.fonts.ready);
   const proc=spawn(ffmpeg,["-y","-f","image2pipe","-vcodec","mjpeg","-framerate",String(fps),"-i","-","-i",audio,"-c:v","libx264","-preset","slow","-crf","17","-pix_fmt","yuv420p","-c:a","aac","-b:a","192k","-shortest","-movflags","+faststart",output],{stdio:["pipe","inherit","inherit"]});
   for(let frame=0;frame<frames;frame++){
     await page.evaluate((f)=>window.setFrame(f),frame);

@@ -8,7 +8,7 @@
     :root { color-scheme: dark; --green:#07c160; --ink:#07110c; --white:#f6fff9; --muted:#90aa9b; }
     * { box-sizing:border-box; }
     html,body { width:100%; height:100%; margin:0; overflow:hidden; background:var(--ink); }
-    body { font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    body { font-family:Inter,"PingFang SC","Hiragino Sans GB",ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
     #film { position:relative; width:1920px; height:1080px; overflow:hidden; background:#07110c; }
     .aurora { position:absolute; inset:-35%; background:radial-gradient(circle at 44% 40%,rgba(7,193,96,.23),transparent 28%),radial-gradient(circle at 70% 70%,rgba(0,255,160,.09),transparent 30%); filter:blur(45px); }
     .grid { position:absolute; inset:0; opacity:.13; background-image:linear-gradient(rgba(124,255,189,.16) 1px,transparent 1px),linear-gradient(90deg,rgba(124,255,189,.16) 1px,transparent 1px); background-size:64px 64px; mask-image:linear-gradient(to bottom,transparent,#000 24%,#000 75%,transparent); }
@@ -144,6 +144,46 @@
     const f=range(t,12.65,13.4); move(document.querySelector('.final-inner'),0,(1-f)*38,.94+.06*f);
     document.querySelector('.dot').style.opacity=.55+.45*(.5+.5*Math.sin(t*5));
   };
+  if (new URLSearchParams(location.search).get("lang") === "zh") {
+    document.documentElement.lang = "zh-CN";
+    document.querySelector('.status').innerHTML = '<span class="dot"></span>本地 / 就绪';
+    document.querySelector('#s1 .eyebrow').textContent = 'Codex × 微信 / 零云端中转';
+    document.querySelector('#s1 h1').innerHTML = '消息在走。<br><em>工作流不被打断。</em>';
+    document.querySelector('#s1 p').textContent = '面向 macOS 微信的原生、低 Token 本地桥接。';
+    document.querySelector('#s2 .eyebrow').textContent = '真实设备测试';
+    document.querySelector('#s2 h2').innerHTML = '一条指令。<br>一次验证发送。';
+    document.querySelector('#s2 .timer span').textContent = '秒';
+    document.querySelector('#s2 p').textContent = '输入框已清空。送达已确认。匹配消息恰好一条。';
+    document.querySelector('#s2 .micro').textContent = '命令到结果 1,252.7 毫秒 · macOS · 2026-07-22';
+    document.querySelector('#s2 .verify').innerHTML = '<span class="check">✓</span>精确聊天已验证 · JERRY';
+    document.querySelector('#s3 .eyebrow').textContent = '紧凑路径';
+    document.querySelector('#s3 h2').textContent = '更少界面，更懂意图。';
+    document.querySelector('#s3 .pipeline-sub').textContent = 'Codex 得到语义化消息，而不是一整墙辅助功能文本。';
+    const zhNodes = [
+      ['Codex', '理解你的指令'],
+      ['紧凑 MCP', '四个语义工具'],
+      ['原生 AX', '精确聊天验证'],
+      ['微信', '读取 · 等待 · 发送'],
+    ];
+    document.querySelectorAll('#s3 .node').forEach((node, index) => {
+      node.querySelector('h3').textContent = zhNodes[index][0];
+      node.querySelector('p').textContent = zhNodes[index][1];
+    });
+    const zhDataLabels = ['真实诊断字符', '紧凑的 8 条消息结果'];
+    document.querySelectorAll('#s3 .data-box small').forEach((label, index) => label.textContent = zhDataLabels[index]);
+    document.querySelector('#s4 .eyebrow').textContent = '自动精确选聊';
+    document.querySelector('#s4 h2').innerHTML = '无需手动<br>找聊天。';
+    document.querySelector('#s4 .quiet-copy p').textContent = 'FastBridge 自动搜索精确名称。能后台完成就留在后台；只有微信要求时才短暂前置，随后自动恢复你的工作。';
+    const zhFeatures = ['本地运行', 'MIT 开源', '无需 API 密钥', '无需 App Store'];
+    document.querySelectorAll('#s4 .feature').forEach((feature, index) => feature.textContent = zhFeatures[index]);
+    document.querySelector('#s4 .fake-code').innerHTML = '<span class="g">wechat_read</span>({ chat: "Jerry" })<br>→ 4 条消息 · 1.385 秒<br><br><span class="g">wechat_wait</span>({ after: signature })<br>→ 不返回未变化状态<br><br><span class="g">wechat_send</span>({ chat: "Jerry" })<br>→ 精确目标已验证';
+    document.querySelector('#s4 .quiet-badge span').textContent = '自动恢复';
+    document.querySelector('#s5 .eyebrow').textContent = '免费 · 本地 · 开源';
+    document.querySelector('#s5 h2').innerHTML = '让微信拥有<br><em>Codex 速度。</em>';
+    document.querySelector('#s5 p').textContent = '几分钟安装，一秒级读写。';
+    const zhFooter = ['macOS', 'Intel + Apple 芯片', 'MIT'];
+    document.querySelectorAll('#s5 .footer-pills span').forEach((pill, index) => pill.textContent = zhFooter[index]);
+  }
   window.setFrame(0);
 </script>
 </body>

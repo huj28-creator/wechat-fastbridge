@@ -88,6 +88,7 @@ The reproducible 15-second 1080p launch film lives in [`promo/`](promo/). It use
 cd promo
 npm install
 npm run render
+npm run render:zh
 ```
 
 ## Limitations
