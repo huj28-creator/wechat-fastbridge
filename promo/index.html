@@ -35,7 +35,7 @@
     .window-chrome { height:58px; background:#eef3ef; display:flex; align-items:center; gap:10px; padding:0 22px; border-bottom:1px solid #d9e2dc; }
     .window-chrome i { display:block; width:13px; height:13px; border-radius:50%; background:#c8d1cb; }
     .window-chrome i:nth-child(1){background:#ff645f}.window-chrome i:nth-child(2){background:#ffbd45}.window-chrome i:nth-child(3){background:#28c940}
-    .contact-shot { height:152px; background:#d7d7d7 url('./assets/jerry-chat.png') center/cover no-repeat; border-bottom:1px solid #c9d0cb; }
+    .contact-shot { height:152px; background:#d7d7d7; border-bottom:1px solid #c9d0cb; }
     .contact-shot.generic { display:flex; align-items:center; gap:20px; padding:0 34px; background:#d7d7d7; }
     .generic-avatar { width:78px; height:78px; border-radius:18px; display:grid; place-items:center; background:linear-gradient(145deg,#20c873,#06994b); color:#fff; font-size:34px; font-weight:850; box-shadow:0 10px 24px rgba(7,193,96,.22); }
     .generic-title { font-size:29px; font-weight:800; color:#17231c; }
@@ -98,31 +98,31 @@
   <div class="topbar"><div class="brand"><div class="mark">C</div>WECHAT FASTBRIDGE</div><div class="status"><span class="dot"></span>LOCAL / READY</div></div>
 
   <section class="scene" id="s1">
-    <div class="hero"><div class="eyebrow">Codex × WeChat / zero cloud relay</div><h1>Messages move.<br><em>Your flow stays yours.</em></h1><p>A native, token-efficient bridge for macOS WeChat.</p><div class="hero-line" id="heroLine"></div></div>
+    <div class="hero"><div class="eyebrow">Control Mac WeChat from Codex</div><h1>Say who to message.<br><em>Codex sends it.</em></h1><p>No manual chat search. No screenshot-heavy Computer Use loop.</p><div class="hero-line" id="heroLine"></div></div>
     <div class="orbit" id="orbit"><div class="orbit-node"></div></div>
   </section>
 
   <section class="scene" id="s2">
     <div class="proof-layout">
-      <div class="wechat-card" id="wechatCard"><div class="window-chrome"><i></i><i></i><i></i></div><div class="contact-shot"></div><div class="chat-area"><div class="bubble" id="bubble">FastBridge optimized final test<span class="cursor"></span></div><div class="verify"><span class="check">✓</span>EXACT CHAT VERIFIED · JERRY</div></div></div>
-      <div class="metric-stack"><div class="eyebrow">Real device test</div><h2>One command.<br>One verified send.</h2><div class="timer"><strong id="timer">0.00</strong><span>seconds</span></div><p>Input cleared. Delivery confirmed. Exactly one matching message.</p><div class="micro">1,252.7 ms command-to-result · macOS · 2026-07-22</div></div>
+      <div class="wechat-card" id="wechatCard"><div class="window-chrome"><i></i><i></i><i></i></div><div class="contact-shot generic"><div class="generic-avatar">P</div><div><div class="generic-title">Project group</div><div class="generic-subtitle">12 members</div></div></div><div class="chat-area"><div class="bubble" id="bubble">Meeting moved to 3 PM.<span class="cursor"></span></div><div class="verify"><span class="check">✓</span>EXACT CHAT VERIFIED · PROJECT GROUP</div></div></div>
+      <div class="metric-stack"><div class="eyebrow">Real Mac benchmark</div><h2>Finds the right chat.<br>Verifies. Sends.</h2><div class="timer"><strong id="timer">0.00</strong><span>seconds</span></div><p>No manual chat selection. One matching message, sent exactly once.</p><div class="micro">1,252.7 ms command-to-result · macOS · 2026-07-22</div></div>
     </div>
   </section>
 
   <section class="scene" id="s3">
-    <div class="pipeline"><div class="eyebrow" style="text-align:center">The compact path</div><h2>Less UI. More intent.</h2><p class="pipeline-sub">Codex gets semantic messages — not a wall of accessibility text.</p>
+    <div class="pipeline"><div class="eyebrow" style="text-align:center">Compared with the full Computer Use accessibility tree</div><h2>Save ≈3,400 tokens per 8-message read.</h2><p class="pipeline-sub">13,852 characters → 296 characters; estimated at 4 characters per token.</p>
       <div class="nodes" id="nodes"><div class="node"><div class="node-num">01</div><h3>Codex</h3><p>Understands your command</p></div><div class="node"><div class="node-num">02</div><h3>Compact MCP</h3><p>Four semantic tools</p></div><div class="node"><div class="node-num">03</div><h3>Native AX</h3><p>Exact-chat verification</p></div><div class="node"><div class="node-num">04</div><h3>WeChat</h3><p>Read · wait · send</p></div></div>
-      <div class="compression"><div class="data-box"><b>13,852</b><small>real diagnostic characters</small></div><div class="save">−97.9%</div><div class="data-box"><b>296</b><small>compact 8-message result</small></div></div>
+      <div class="compression"><div class="data-box"><b>≈3,500</b><small>raw UI text · estimated tokens</small></div><div class="save">−97.9%</div><div class="data-box"><b>≈75</b><small>FastBridge · estimated tokens</small></div></div>
     </div>
   </section>
 
   <section class="scene" id="s4">
     <div class="quiet-layout"><div class="quiet-copy"><div class="eyebrow">Automatic exact selection</div><h2>No manual<br>chat hunt.</h2><p>FastBridge searches the exact title itself. It stays in the background when possible, briefly focuses only when WeChat requires it, then restores your work.</p><div class="feature-list"><span class="feature">LOCAL ONLY</span><span class="feature">MIT LICENSE</span><span class="feature">NO API KEY</span><span class="feature">NO APP STORE</span></div></div>
-      <div class="desktop" id="desktop"><div class="screen back"></div><div class="screen front"><div class="window-chrome"><i></i><i></i><i></i></div><div class="fake-code"><span class="g">wechat_read</span>({ chat: "Jerry" })<br>→ 4 messages · 1.385 s<br><br><span class="g">wechat_wait</span>({ after: signature })<br>→ unchanged state suppressed<br><br><span class="g">wechat_send</span>({ chat: "Jerry" })<br>→ exact target verified</div></div><div class="quiet-badge" id="quietBadge"><b>↩</b><span>AUTO RESTORE</span></div></div>
+      <div class="desktop" id="desktop"><div class="screen back"></div><div class="screen front"><div class="window-chrome"><i></i><i></i><i></i></div><div class="fake-code"><span class="g">wechat_read</span>({ chat: "Project group" })<br>→ 4 messages · 1.385 s<br><br><span class="g">wechat_wait</span>({ after: signature })<br>→ unchanged state suppressed<br><br><span class="g">wechat_send</span>({ chat: "Project group" })<br>→ exact target verified</div></div><div class="quiet-badge" id="quietBadge"><b>↩</b><span>AUTO RESTORE</span></div></div>
     </div>
   </section>
 
-  <section class="scene" id="s5"><div class="final"><div class="final-inner"><div class="final-logo">C</div><div class="eyebrow">Free · local · open source</div><h2>WeChat at<br><em>Codex speed.</em></h2><p>Install in minutes. Read and send in seconds.</p><div class="repo"><span class="gh">GH</span>github.com/huj28-creator/wechat-fastbridge</div><div class="footer-pills"><span>macOS</span><span>Intel + Apple Silicon</span><span>MIT</span></div></div></div></section>
+  <section class="scene" id="s5"><div class="final"><div class="final-inner"><div class="final-logo">C</div><div class="eyebrow">Free · local · open source</div><h2>Tell Codex.<br><em>WeChat sends.</em></h2><p>Install FastBridge, then say who should receive what.</p><div class="repo"><span class="gh">GH</span>github.com/huj28-creator/wechat-fastbridge</div><div class="footer-pills"><span>macOS</span><span>Intel + Apple Silicon</span><span>MIT</span></div></div></div></section>
 </main>
 <script>
   const $ = (id) => document.getElementById(id);
