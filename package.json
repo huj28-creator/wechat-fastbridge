@@ -13,8 +13,11 @@
     "wechat-fastbridge": "bridge/server.mjs"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.17.5",
-    "zod": "^3.25.76"
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "zod": "^4.4.3"
+  },
+  "overrides": {
+    "@hono/node-server": "2.0.11"
   },
   "engines": {
     "node": ">=20"
