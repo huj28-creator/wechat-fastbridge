@@ -1,10 +1,10 @@
 # Benchmarks
 
-## Version 1.4 algorithm gates
+## Version 1.5 algorithm gates
 
-The v1.4 hot path retains verified routing and the native allowlisted inbox, then adds one compact media tool for verified files and custom stickers. Unchanged preview scans and unrelated titles are discarded before returning to Codex; message context is fetched only after an allowed event.
+The v1.5 hot path combines verified routing, allowlisted inbox events, compact media, adaptive polling, cached sticker geometry, and bounded relevance-based chat memory. Unchanged scans and unrelated titles are discarded before returning to Codex.
 
-| Gate | v1.0 path | v1.4 path |
+| Gate | v1.0 path | v1.5 path |
 | --- | ---: | ---: |
 | Already-selected send native calls | inspect + send | send |
 | Already-selected read native calls | inspect + snapshot | snapshot |
@@ -21,6 +21,10 @@ The v1.4 hot path retains verified routing and the native allowlisted inbox, the
 | Multi-chat sensing | switch and read every chat | local allowlisted preview events |
 | Unchanged inbox payload | n/a | zero events |
 | File/sticker context input | screenshots / accessibility dump | explicit path or query/slot only |
+| MCP tool-definition characters | n/a | 3,621 (36% below v1.4's 5,624) |
+| Rolling conversation memory | none | 120 messages/24 KB × 8 chats, RAM-only |
+| Delta context | last lines only | recent continuity + locally ranked relevant facts |
+| UI controls / duplicate bubbles | mixed / collapsed | controls excluded / duplicates preserved |
 
 The one-call behavior, target-mismatch fallback, transient search-result retry, unchanged suppression, delta overlap, limit-change fallback, self-send suppression, and context bound are automated tests. Based on the separately measured 499 ms native send and 465 ms native snapshot below, removing the preceding scan should save roughly one native-process round trip on an already-selected chat. That is a component estimate, not a new end-to-end claim; real UI timings still vary with WeChat state and user activity.
 
@@ -52,6 +56,8 @@ Platform: macOS, WeChat 4.x, Apple Silicon. The bridge binary was the universal 
 | v1.4 favorite sticker slot send | 4,132 ms native; 6,017 ms total |
 | v1.4 searched sticker (`早上好`, first result) | 7,169 ms native; 8,566 ms total |
 | v1.4 media destinations used | Jerry only |
+| v1.5 cold favorite sticker | 4,315 ms native; 6,784 ms total |
+| v1.5 cached favorite sticker | 1,823 ms native; 3,784 ms total |
 | Full diagnostic result | 13,852 characters (~3,463 tokens) |
 | Compact 8-message result | 296 characters (~74 tokens) |
 | Real-result reduction | 97.9% |
@@ -64,7 +70,7 @@ The original text-send benchmark used `autoSelect: true`, verified the already-s
 ## Automated gates
 
 - MCP server exposes only compact semantic tools.
-- Twenty-six tests cover MCP discovery, normalized/fuzzy names, confirmed media, compact native round trips, allowlisted inbox baselines/deltas, own-event suppression, automatic-selection recovery, incremental context, skill packaging, runtime size, dependency count, token reduction, and wrong-chat rejection.
+- Twenty-eight tests cover MCP discovery/schema budgets, smart relevant context, normalized/fuzzy names, confirmed media and geometry reuse, compact native round trips, allowlisted inbox deltas, own-event suppression, recovery, runtime size, dependencies, token reduction, and wrong-chat rejection.
 - Compact Computer Use fallback removes at least 80% of representative UI-tree characters.
 - Exact-chat mismatch prevents writes.
 - Skill passes the standard Codex skill validator.

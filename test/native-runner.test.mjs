@@ -144,6 +144,29 @@ test("media send confirms a changed chat and restores the previous app", async (
   assert.deepEqual(events, ["focus", "restore:com.example.previous"]);
 });
 
+test("sticker geometry is discovered once and reused by later sends", async () => {
+  const mediaArgs = [];
+  let sent = 0;
+  const bridge = new NativeBridge({
+    delay: async () => {},
+    system: { frontBundle: async () => "com.example.previous", focusWeChat: async () => {}, restorePrevious: async () => {} },
+  });
+  bridge.run = async (command, args) => {
+    if (command === "send-sticker") {
+      mediaArgs.push(args);
+      sent += 1;
+      return { ok: true, chat: "Jerry", mediaKind: "sticker", signature: `before-${sent}`, panelDismissed: true,
+        panelDX: -241.5, tabDY: -53, tabStep: 52, panelWidth: 478 };
+    }
+    return { ok: true, chat: "Jerry", messages: ["我说:[动画表情]"], signature: `after-${sent}` };
+  };
+  await bridge.sendMedia({ chat: "Jerry", kind: "sticker", index: 1 });
+  await bridge.sendMedia({ chat: "Jerry", kind: "sticker", index: 2 });
+  assert.equal(mediaArgs[0].includes("--panel-dx"), false);
+  assert.equal(mediaArgs[1].includes("--panel-dx"), true);
+  assert.equal(mediaArgs[1][mediaArgs[1].indexOf("--tab-step") + 1], "52");
+});
+
 test("media send never reports success when the chat signature stays unchanged", async () => {
   const bridge = new NativeBridge({
     delay: async () => {},
@@ -185,6 +208,22 @@ test("selected-chat read uses one native call and returns cached deltas with con
   assert.equal(unchanged.changed, false);
   assert.deepEqual(differentLimit.messages, ["A:three", "B:four"]);
   assert.equal(differentLimit.delta, false);
+});
+
+test("smart context retrieves an older relevant fact plus recent continuity", async () => {
+  const firstWindow = ["A说:项目预算上限是5000元", "B说:周五交付", "A说:今天下雨", "B说:收到", "A说:午饭吃什么", "B说:我去开会", "A说:好的", "B说:我晚点回复"];
+  const states = [
+    { ok: true, chat: "lab", messages: firstWindow, signature: "s1" },
+    { ok: true, chat: "lab", messages: [...firstWindow.slice(1), "C说:预算还能增加吗"], signature: "s2" },
+  ];
+  const bridge = new NativeBridge();
+  bridge.run = async () => states.shift();
+  const baseline = await bridge.read({ chat: "lab", limit: 8 });
+  const delta = await bridge.read({ chat: "lab", limit: 8, after: baseline.signature });
+  assert.deepEqual(delta.messages, ["C说:预算还能增加吗"]);
+  assert.ok(delta.context.includes("A说:项目预算上限是5000元"), JSON.stringify(delta.context));
+  assert.ok(delta.context.includes("B说:我晚点回复"), JSON.stringify(delta.context));
+  assert.ok(delta.context.length <= 3);
 });
 
 test("wait reads its baseline once and returns only the reply delta", async () => {

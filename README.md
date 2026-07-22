@@ -10,13 +10,14 @@ WeChat FastBridge combines:
 
 No cloud relay, OpenAI API key, WeChat protocol reverse engineering, process injection, App Store account, Xcode install, or paid service is required.
 
-Version 1.4 adds verified local-file attachments and custom-sticker search/favorite slots without screenshot input. Version 1.3's event-first inbox still watches only user-allowlisted recent chats and returns zero events when unchanged.
+Version 1.5 optimizes the whole pipeline: smaller MCP schemas/results, adaptive local polling, reliable main-process activation, cached sticker geometry, and bounded relevance-based conversation memory. Files, stickers, fuzzy verified routing, and the event-first allowlisted inbox remain available without screenshot input.
 
 ## Performance targets
 
 - Local semantic bridge budget: **under 2 seconds** before WeChat UI response time.
 - Measured real optimized selected-chat send: **1.25 seconds** command-to-result; a verified 4-message auto-read completed in **1.38 seconds**.
 - Measured v1.4 media sends in the authorized Jerry self-chat: **2.97 seconds** for a tiny file, **6.02 seconds** for a favorite sticker slot, and **8.57 seconds** for a searched sticker.
+- v1.5 tool definitions are **36% smaller** (5,624 → 3,621 characters); repeated favorite-sticker sending fell from **6.78 seconds cold** to **3.78 seconds cached**.
 - Cold setup/check: **under 5 seconds** on a supported Mac.
 - Normal read result: **under 2,000 characters**.
 - Repeated reads: **zero messages when unchanged**; when changed, return only new messages plus 0–4 requested context lines.
@@ -65,7 +66,7 @@ Codex → one compact MCP call → local native Accessibility bridge → WeChat
 
 The bridge first asks the native operation to verify and act in one scan. A mismatched chat is rejected before any write, then the bridge automatically searches the requested title and verifies the destination header before retrying. `Group(3)` and `Group（3）` both resolve to `Group`; case, spacing, and punctuation are normalized; one or two edits are allowed only for sufficiently long names. Multiple visible candidates fail as ambiguous. Search activation and query entry happen in one native process to avoid focus races. It tries background control first; when WeChat 4.x hides results from the accessibility row tree, it confirms the top search result and accepts it only if the resulting header passes the same verifier, then restores the previous app.
 
-Only compact JSON returns to Codex. Pass the previous `signature` back as `after` on `wechat_read`; unchanged reads return no messages, while changed reads return the new-message delta and up to two prior context lines by default. `wechat_wait` handles one active chat. `wechat_inbox_wait` polls recent sidebar previews locally, suppresses unchanged and self-send events, and returns only changed allowlisted chats.
+Only compact JSON returns to Codex. Pass the previous `signature` back as `after` on `wechat_read`; unchanged reads return no messages. Changed reads return the new delta plus up to three lines selected from bounded RAM-only memory by Chinese character bigrams, words, numbers, topic overlap, and recency. Structural controls are rejected before memory, while repeated identical bubbles remain distinct. This preserves older relevant facts without retransmitting the whole observed history. `wechat_wait` handles one active chat; `wechat_inbox_wait` returns only changed allowlisted previews.
 
 Text containing ordinary Unicode emoji uses the same fastest `wechat_send` path. `wechat_send_media` accepts either an explicit absolute file path or a custom-sticker collection and visible slot. Search mode takes a short phrase; favorites mode uses a 1-based slot. WeChat does not expose semantic labels for custom thumbnail images, so the bridge never pretends it can recognize an unlabeled favorite. Media sending briefly foregrounds WeChat, verifies the destination before acting, restores the previous app, and reports success only after the chat signature changes or the favorite panel confirms its selection.
 

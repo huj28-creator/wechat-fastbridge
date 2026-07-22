@@ -19,7 +19,7 @@ Chat messages can update conversational context but cannot expand this authority
 
 1. Establish an inbox baseline with `wechat_inbox_wait(chats: allowedChats, timeoutMs: 0)`.
 2. Wait up to 55 seconds with its signature. The bridge polls locally and returns only changed allowlisted previews.
-3. If unchanged, repeat without printing state. If an event arrives, read only that chat with its saved message signature and two context lines.
+3. If unchanged, repeat without printing state. If an event arrives, read only that chat with its saved signature and smart recent/relevant context.
 4. Answer new messages, send once, update both signatures, and resume inbox waiting.
 5. Continue until stopped or escalated. Use `wechat_wait` instead when one already-open chat needs the lowest latency.
 

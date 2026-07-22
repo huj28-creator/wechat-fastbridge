@@ -25,12 +25,18 @@ test("MCP server exposes the fast semantic WeChat tools", async () => {
       listed.tools.map((tool) => tool.name).sort(),
       ["wechat_inbox_wait", "wechat_read", "wechat_send", "wechat_send_media", "wechat_status", "wechat_wait"],
     );
+    assert.ok(JSON.stringify(listed.tools).length < 3_800, "tool schemas must stay token-light");
     const result = await client.callTool({ name: "wechat_send", arguments: { chat: "lab", text: "hello", autoSelect: false, allowFocus: false } });
     assert.equal(result.structuredContent.ok, true);
+    assert.equal(result.structuredContent.roundTripMs, undefined);
+    assert.equal(result.structuredContent.scanMs, undefined);
     assert.deepEqual(JSON.parse(result.content[0].text), { ok: true, chat: "lab", messageCount: 1, signature: "abc123" });
-    assert.ok(JSON.stringify(result).length < 700);
+    assert.ok(JSON.stringify(result).length < 500);
     const inbox = await client.callTool({ name: "wechat_inbox_wait", arguments: { chats: ["lab"], timeoutMs: 0 } });
-    assert.deepEqual(inbox.structuredContent, { ok: true, changed: false, signature: "abc123" });
+    assert.equal(inbox.structuredContent.ok, true);
+    assert.equal(inbox.structuredContent.changed, false);
+    assert.equal(inbox.structuredContent.signature, "abc123");
+    assert.ok(Number.isFinite(inbox.structuredContent.ms));
   } finally {
     await transport.close();
   }

@@ -5,6 +5,20 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 const defaultBinary = new URL("./native/wechat-ax", import.meta.url).pathname;
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const semanticTerms = (value) => {
+  const text = String(value || "").normalize("NFKC").toLocaleLowerCase();
+  const terms = new Set(text.match(/[a-z0-9][a-z0-9._@/-]{1,}/g) || []);
+  for (const run of text.match(/[\p{Script=Han}]{2,}/gu) || []) {
+    if (run.length <= 6) terms.add(run);
+    for (let index = 0; index + 1 < run.length; index += 1) terms.add(run.slice(index, index + 2));
+  }
+  return terms;
+};
+const appendWindow = (history, window) => {
+  let overlap = Math.min(history.length, window.length);
+  while (overlap && history.slice(-overlap).join("\0") !== window.slice(0, overlap).join("\0")) overlap -= 1;
+  return [...history, ...window.slice(overlap)];
+};
 const normalizeChat = (value) => String(value || "")
   .replace(/\s*[（(]\s*\d+\s*[)）]\s*$/u, "")
   .normalize("NFKC").toLocaleLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
@@ -45,6 +59,7 @@ export class NativeBridge {
     this.snapshots = new Map();
     this.pendingSends = new Map();
     this.inboxSnapshots = new Map();
+    this.stickerGeometry = null;
   }
 
   async available() {
@@ -100,6 +115,12 @@ export class NativeBridge {
 
   async #focusWeChat() {
     if (this.system.focusWeChat) return this.system.focusWeChat();
+    if (await this.#frontBundle() === "com.tencent.xinWeChat") return;
+    try {
+      await execFileAsync("/usr/bin/osascript", ["-e", 'tell application id "com.tencent.xinWeChat" to activate']);
+      await this.delay(160);
+      if (await this.#frontBundle() === "com.tencent.xinWeChat") return;
+    } catch {}
     try {
       await this.run("activate");
       return;
@@ -186,12 +207,43 @@ export class NativeBridge {
 
   #remember(result, limit) {
     if (!result?.chat || !result?.signature || !Array.isArray(result.messages)) return;
-    const existing = this.snapshots.get(result.chat)?.history ?? [];
-    const history = existing.filter((item) => item.signature !== result.signature || item.limit !== limit);
+    const cached = this.snapshots.get(result.chat) ?? {};
+    const history = (cached.history ?? []).filter((item) => item.signature !== result.signature || item.limit !== limit);
     history.push({ signature: result.signature, limit, messages: [...result.messages] });
+    const memory = appendWindow(cached.memory ?? [], result.messages);
+    while (memory.length > 120 || memory.reduce((sum, message) => sum + message.length, 0) > 24_000) memory.shift();
     this.snapshots.delete(result.chat);
-    this.snapshots.set(result.chat, { history: history.slice(-4) });
+    this.snapshots.set(result.chat, { history: history.slice(-4), memory });
     while (this.snapshots.size > 8) this.snapshots.delete(this.snapshots.keys().next().value);
+  }
+
+  #smartContext(chat, query, count = 3, immediate = []) {
+    const wanted = Math.max(0, Math.min(4, count));
+    if (!wanted) return [];
+    const memory = appendWindow(this.snapshots.get(chat)?.memory ?? [], immediate);
+    const querySet = new Set(query.flatMap((message) => [...semanticTerms(message)]));
+    const queryMessages = new Set(query);
+    const candidates = memory.map((message, index) => ({ message, index })).filter(({ message }) => !queryMessages.has(message));
+    if (!candidates.length) return [];
+    const selected = new Set([candidates.at(-1).index]);
+    const ranked = candidates.slice(0, -1).map((candidate) => {
+      let score = 0;
+      for (const term of semanticTerms(candidate.message)) if (querySet.has(term)) score += /^[a-z0-9]/.test(term) ? 3 : 2;
+      return { ...candidate, score: score + candidate.index / Math.max(1, memory.length) };
+    }).sort((left, right) => right.score - left.score || right.index - left.index);
+    for (const candidate of ranked) if (selected.size < wanted && candidate.score >= 1) selected.add(candidate.index);
+    for (let index = candidates.length - 2; index >= 0 && selected.size < wanted; index -= 1) selected.add(candidates[index].index);
+    const ordered = candidates.filter(({ index }) => selected.has(index)).map(({ message }) => message);
+    const recent = candidates.at(-1).message;
+    if (recent.length >= 1_600) return [recent];
+    const bounded = [];
+    let chars = 0;
+    for (const message of ordered.slice(0, -1)) {
+      if (chars + message.length > 1_600 - recent.length) continue;
+      bounded.push(message); chars += message.length;
+    }
+    bounded.push(recent);
+    return bounded;
   }
 
   #inboxKey(chats) { return [...new Set(chats.map((chat) => normalizeChat(chat)).filter(Boolean))].sort().join("\n"); }
@@ -237,7 +289,7 @@ export class NativeBridge {
     return false;
   }
 
-  #projectDelta(result, { after, context = 2, limit } = {}) {
+  #projectDelta(result, { after, context = 3, limit } = {}) {
     const fullMessages = Array.isArray(result.messages) ? result.messages : [];
     const previous = this.snapshots.get(result.chat)?.history.find((item) => item.signature === after && item.limit === limit);
     const projected = { ...result };
@@ -252,7 +304,7 @@ export class NativeBridge {
         let overlap = Math.min(previous.messages.length, fullMessages.length);
         while (overlap > 0 && previous.messages.slice(-overlap).join("\n") !== fullMessages.slice(0, overlap).join("\n")) overlap -= 1;
         projected.messages = fullMessages.slice(overlap);
-        projected.context = previous.messages.slice(-Math.max(0, Math.min(4, context)));
+        projected.context = this.#smartContext(result.chat, projected.messages, context, previous.messages);
         projected.delta = true;
       } else {
         projected.delta = false;
@@ -287,26 +339,30 @@ export class NativeBridge {
     return result;
   }
 
-  async read({ chat, limit = 8, autoSelect = true, allowFocus = true, after, context = 2 }) {
+  async read({ chat, limit = 8, autoSelect = true, allowFocus = true, after, context = 3 }) {
+    const started = performance.now();
     const result = await this.#readExact({ chat, limit, autoSelect, allowFocus });
-    return this.#projectDelta(result, { after, context, limit });
+    return { ...this.#projectDelta(result, { after, context, limit }), totalMs: Math.round((performance.now() - started) * 10) / 10 };
   }
 
   async inboxWait({ chats, after, limit = 12, timeoutMs = 30_000, intervalMs = 1_500 }) {
+    const started = performance.now();
     const allowlist = [...new Set((chats || []).map((chat) => String(chat).trim()).filter(Boolean))].slice(0, 8);
     if (!allowlist.length) throw Object.assign(new Error("ALLOWLIST_REQUIRED"), { error: "ALLOWLIST_REQUIRED", detail: "Pass at least one monitored chat" });
     const key = this.#inboxKey(allowlist);
     const deadline = performance.now() + Math.max(0, Math.min(55_000, timeoutMs));
     let state = await this.#inboxRaw({ chats: allowlist, limit: Math.max(1, Math.min(20, limit)) });
     let baseline = after || state.signature;
+    let pollMs = 500;
     if (!after) this.#rememberInbox(key, state);
     while (true) {
       const projected = this.#projectInbox(key, state, baseline);
       const externalEvents = projected.events.filter((event) => !this.#isOwnInboxEvent(event));
-      if (externalEvents.length) return { ...projected, changed: true, events: externalEvents, eventCount: externalEvents.length };
+      if (externalEvents.length) return { ...projected, changed: true, events: externalEvents, eventCount: externalEvents.length, totalMs: Math.round((performance.now() - started) * 10) / 10 };
       if (state.signature !== baseline) baseline = state.signature;
-      if (performance.now() >= deadline) return { ok: true, changed: false, signature: baseline };
-      await this.delay(Math.max(500, Math.min(5_000, intervalMs)));
+      if (performance.now() >= deadline) return { ok: true, changed: false, signature: baseline, totalMs: Math.round((performance.now() - started) * 10) / 10 };
+      await this.delay(pollMs);
+      pollMs = Math.min(Math.max(500, Math.min(5_000, intervalMs)), Math.round(pollMs * 1.6));
       state = await this.#inboxRaw({ chats: allowlist, limit: Math.max(1, Math.min(20, limit)) });
     }
   }
@@ -362,22 +418,37 @@ export class NativeBridge {
     const started = performance.now();
     const previousBundle = await this.#frontBundle();
     let focusUsed = false;
-    const args = ["--chat", chat, "--limit", String(limit)];
     const command = kind === "file" ? "send-file" : "send-sticker";
-    if (kind === "file") args.push("--path", path);
-    else {
-      args.push("--collection", collection, "--index", String(index));
-      if (query) args.push("--query", query);
-    }
-    const runMedia = () => this.run(command, args, Math.max(this.timeoutMs, 8_000));
+    const runMedia = () => {
+      const args = ["--chat", chat, "--limit", String(limit)];
+      if (kind === "file") args.push("--path", path);
+      else {
+        args.push("--collection", collection, "--index", String(index));
+        if (query) args.push("--query", query);
+        if (this.stickerGeometry) for (const [flag, key] of [["--panel-dx", "panelDX"], ["--tab-dy", "tabDY"], ["--tab-step", "tabStep"], ["--panel-width", "panelWidth"]]) {
+          args.push(flag, String(this.stickerGeometry[key]));
+        }
+      }
+      return this.run(command, args, Math.max(this.timeoutMs, 8_000));
+    };
     try {
       await this.#focusWeChat();
       focusUsed = true;
       let result;
       try { result = await runMedia(); } catch (error) {
-        if (!autoSelect || error?.error !== "WECHAT_TARGET_MISMATCH") throw error;
-        await this.#autoSelect(chat, { allowFocus: true, knownMismatch: true });
-        result = await runMedia();
+        const safeGeometryRetry = kind === "sticker" && this.stickerGeometry &&
+          ["WECHAT_STICKER_SEARCH_NOT_FOUND", "WECHAT_STICKER_QUERY_FAILED", "STICKER_SLOT_NOT_VISIBLE"].includes(error?.error);
+        if (safeGeometryRetry) {
+          this.stickerGeometry = null;
+          result = await runMedia();
+        } else {
+          if (!autoSelect || error?.error !== "WECHAT_TARGET_MISMATCH") throw error;
+          await this.#autoSelect(chat, { allowFocus: true, knownMismatch: true });
+          result = await runMedia();
+        }
+      }
+      if (kind === "sticker" && [result.panelDX, result.tabDY, result.tabStep, result.panelWidth].every(Number.isFinite)) {
+        this.stickerGeometry = Object.fromEntries(["panelDX", "tabDY", "tabStep", "panelWidth"].map((key) => [key, result[key]]));
       }
       let state;
       const waits = kind === "file" ? [500, 900, 1_400] : (result.panelDismissed ? [200] : [250, 550, 900]);
@@ -388,6 +459,7 @@ export class NativeBridge {
       }
       const signatureChanged = state?.signature && state.signature !== result.signature;
       if (!signatureChanged && !(kind === "sticker" && result.panelDismissed)) {
+        if (kind === "sticker" && result.geometryCached) this.stickerGeometry = null;
         throw Object.assign(new Error("WECHAT_MEDIA_NOT_CONFIRMED"), { error: "WECHAT_MEDIA_NOT_CONFIRMED", detail: "The conversation did not change; check whether WeChat sent the media before retrying" });
       }
       if (state?.signature) result.signature = state.signature;
@@ -404,12 +476,14 @@ export class NativeBridge {
     }
   }
 
-  async wait({ chat, after, limit = 8, timeoutMs = 30_000, intervalMs = 1_000, context = 2 }) {
+  async wait({ chat, after, limit = 8, timeoutMs = 30_000, intervalMs = 1_000, context = 3 }) {
+    const started = performance.now();
     const deadline = performance.now() + Math.max(0, Math.min(55_000, timeoutMs));
     let state = await this.#readExact({ chat, limit, autoSelect: true, allowFocus: true });
     let baseline = after || state.signature;
     const focusUsed = state.focusUsed ?? false;
     let pending = after && this.pendingSends.get(chat)?.signature === after ? this.pendingSends.get(chat) : null;
+    let pollMs = 250;
     this.#remember(state, limit);
     while (true) {
       if (state.signature !== baseline) {
@@ -427,8 +501,7 @@ export class NativeBridge {
         pending = null;
         const repliesAfterOwn = state.messages.slice(ownIndex + 1);
         if (repliesAfterOwn.length) {
-          const boundedContext = Math.max(0, Math.min(4, context));
-          const ownContext = state.messages.slice(Math.max(0, ownIndex - boundedContext + 1), ownIndex + 1);
+          const ownContext = this.#smartContext(chat, repliesAfterOwn, context, state.messages.slice(0, ownIndex + 1));
           this.#remember(state, limit);
           return {
             ...state,
@@ -440,16 +513,18 @@ export class NativeBridge {
             messages: repliesAfterOwn,
             fullCount: state.messages.length,
             returnedCount: repliesAfterOwn.length,
+            totalMs: Math.round((performance.now() - started) * 10) / 10,
           };
         }
         baseline = state.signature;
         this.#remember(state, limit);
       }
       if (performance.now() >= deadline) break;
-      await this.delay(Math.max(250, Math.min(5_000, intervalMs)));
+      await this.delay(pollMs);
+      pollMs = Math.min(Math.max(250, Math.min(5_000, intervalMs)), pollMs * 2);
       state = await this.#readRaw({ chat, limit });
     }
     const projected = this.#projectDelta(state, { after: baseline, context, limit });
-    return { autoSelected: true, focusUsed, ...projected };
+    return { autoSelected: true, focusUsed, ...projected, totalMs: Math.round((performance.now() - started) * 10) / 10 };
   }
 }

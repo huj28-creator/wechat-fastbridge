@@ -351,6 +351,12 @@ int main(int argc, const char *argv[]) {
         NSArray<NSRunningApplication *> *apps = [NSRunningApplication runningApplicationsWithBundleIdentifier:@"com.tencent.xinWeChat"];
         NSRunningApplication *app = apps.firstObject;
         if (!app) Fail(@"WECHAT_NOT_RUNNING", @"Open WeChat first");
+        for (NSRunningApplication *candidate in apps) {
+            AXUIElementRef candidateRoot = AXUIElementCreateApplication(candidate.processIdentifier);
+            NSArray *candidateWindows = AXAttr(candidateRoot, kAXWindowsAttribute);
+            CFRelease(candidateRoot);
+            if ([candidateWindows isKindOfClass:NSArray.class] && candidateWindows.count) { app = candidate; break; }
+        }
         if ([command isEqualToString:@"debug"]) {
             NSMutableArray *diagnostics = [NSMutableArray array];
             for (NSRunningApplication *candidate in apps) {
@@ -434,7 +440,7 @@ int main(int argc, const char *argv[]) {
         BOOL selectedMatched = NO;
         BOOL headerMatched = NO;
         NSDictionary *input = nil;
-        NSMutableOrderedSet<NSString *> *messages = [NSMutableOrderedSet orderedSet];
+        NSMutableArray<NSString *> *messages = [NSMutableArray array];
         NSMutableArray *inspectSelected = [NSMutableArray array];
         NSMutableArray *inspectHeaders = [NSMutableArray array];
         NSMutableArray *inspectInputs = [NSMutableArray array];
@@ -521,7 +527,9 @@ int main(int argc, const char *argv[]) {
                 if (!input || NSMidY(frame) > NSMidY([input[@"frame"] rectValue])) input = node;
             }
             BOOL isInputRole = [role isEqualToString:(__bridge NSString *)kAXTextAreaRole] || [role isEqualToString:(__bridge NSString *)kAXTextFieldRole];
-            if (rightPane(node) && !isInputRole) for (NSString *value in strings) {
+            BOOL semanticMessageRole = [role isEqualToString:(__bridge NSString *)kAXUnknownRole] ||
+                [role isEqualToString:(__bridge NSString *)kAXStaticTextRole] || [role isEqualToString:(__bridge NSString *)kAXImageRole];
+            if (rightPane(node) && !isInputRole && semanticMessageRole) for (NSString *value in strings) {
                 if (!IsMessageNoise(value, chat)) {
                     [messages addObject:[value stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet]];
                     if (inspectRight.count < 40) [inspectRight addObject:@{@"role": role, @"value": value}];
@@ -704,7 +712,7 @@ int main(int argc, const char *argv[]) {
         }
         if (!selectedMatched || !headerMatched) Fail(@"WECHAT_TARGET_MISMATCH", [@"Select the verified chat: " stringByAppendingString:chat]);
         if (!input) Fail(@"WECHAT_INPUT_NOT_FOUND", chat);
-        NSArray *allMessages = messages.array;
+        NSArray *allMessages = [messages copy];
         NSArray *recent = allMessages.count > limit ? [allMessages subarrayWithRange:NSMakeRange(allMessages.count - limit, limit)] : allMessages;
         NSString *signature = FNV1a([recent componentsJoinedByString:@"\n"]);
         if ([command isEqualToString:@"send-file"]) {
@@ -779,26 +787,54 @@ int main(int argc, const char *argv[]) {
                     if (mediaNodes.count) break;
                 }
             };
-            scanMedia();
-            NSMutableArray<NSDictionary *> *tabs = [NSMutableArray array];
-            for (NSDictionary *node in mediaNodes) {
-                NSRect frame = [node[@"frame"] rectValue];
-                if ([node[@"role"] isEqualToString:(__bridge NSString *)kAXImageRole] && frame.size.width >= 20 && frame.size.width <= 40 &&
-                    frame.size.height >= 20 && frame.size.height <= 40 && NSMidY(frame) < toolbarY && NSMidY(frame) > toolbarY - 120) [tabs addObject:node];
-            }
-            [tabs sortUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
-                CGFloat ax = NSMinX([a[@"frame"] rectValue]), bx = NSMinX([b[@"frame"] rectValue]);
-                return ax < bx ? NSOrderedAscending : (ax > bx ? NSOrderedDescending : NSOrderedSame);
-            }];
             NSInteger tabIndex = [collection isEqualToString:@"search"] ? 0 : 2;
-            if (tabs.count <= tabIndex) Fail(@"WECHAT_STICKER_TABS_NOT_FOUND", chat);
-            NSRect firstTabFrame = [tabs[0][@"frame"] rectValue];
-            NSRect tabFrame = [tabs[tabIndex][@"frame"] rectValue];
-            AXUIElementRef tabElement = (__bridge AXUIElementRef)tabs[tabIndex][@"element"];
+            NSString *cachedDX = Option(args, @"--panel-dx");
+            NSString *cachedDY = Option(args, @"--tab-dy");
+            NSString *cachedStep = Option(args, @"--tab-step");
+            NSString *cachedWidth = Option(args, @"--panel-width");
+            BOOL geometryCached = cachedDX && cachedDY && cachedStep && cachedWidth;
+            CGFloat panelLeft = NSMinX(emojiFrame) + cachedDX.doubleValue;
+            CGFloat tabY = NSMinY(emojiFrame) + cachedDY.doubleValue;
+            CGFloat tabStep = cachedStep.doubleValue;
+            CGFloat panelWidth = cachedWidth.doubleValue;
+            NSRect firstTabFrame = NSMakeRect(panelLeft + 35, tabY, 26, 26);
+            NSRect tabFrame = NSZeroRect;
+            AXUIElementRef tabElement = NULL;
+            if (!geometryCached || tabStep < 30 || tabStep > 80 || panelWidth < 300 || panelWidth > 700) {
+                geometryCached = NO;
+                scanMedia();
+                if (!mediaNodes.count) { usleep(250000); scanMedia(); }
+                NSMutableArray<NSDictionary *> *tabs = [NSMutableArray array];
+                for (NSDictionary *node in mediaNodes) {
+                    NSRect frame = [node[@"frame"] rectValue];
+                    if ([node[@"role"] isEqualToString:(__bridge NSString *)kAXImageRole] && frame.size.width >= 20 && frame.size.width <= 40 &&
+                        frame.size.height >= 20 && frame.size.height <= 40 && NSMidY(frame) < toolbarY && NSMidY(frame) > toolbarY - 120) {
+                        BOOL duplicate = NO;
+                        for (NSDictionary *existing in tabs) {
+                            NSRect other = [existing[@"frame"] rectValue];
+                            if (fabs(NSMinX(other) - NSMinX(frame)) < 2 && fabs(NSMinY(other) - NSMinY(frame)) < 2) { duplicate = YES; break; }
+                        }
+                        if (!duplicate) [tabs addObject:node];
+                    }
+                }
+                [tabs sortUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
+                    CGFloat ax = NSMinX([a[@"frame"] rectValue]), bx = NSMinX([b[@"frame"] rectValue]);
+                    return ax < bx ? NSOrderedAscending : (ax > bx ? NSOrderedDescending : NSOrderedSame);
+                }];
+                if (tabs.count <= tabIndex) Fail(@"WECHAT_STICKER_TABS_NOT_FOUND", chat);
+                firstTabFrame = [tabs[0][@"frame"] rectValue];
+                NSRect secondTabFrame = [tabs[1][@"frame"] rectValue];
+                panelLeft = NSMinX(firstTabFrame) - 35;
+                tabY = NSMinY(firstTabFrame);
+                tabStep = NSMinX(secondTabFrame) - NSMinX(firstTabFrame);
+                if (tabStep < 30 || tabStep > 80) Fail(@"WECHAT_STICKER_TAB_GEOMETRY_INVALID", chat);
+                panelWidth = 478;
+                tabElement = (__bridge AXUIElementRef)tabs[tabIndex][@"element"];
+                tabFrame = [tabs[tabIndex][@"frame"] rectValue];
+            } else tabFrame = NSMakeRect(NSMinX(firstTabFrame) + tabIndex * tabStep, tabY, firstTabFrame.size.width, firstTabFrame.size.height);
             ClickGlobal(CGPointMake(NSMidX(tabFrame), NSMidY(tabFrame)));
             usleep(300000);
-            CGFloat panelLeft = NSMinX(firstTabFrame) - 35;
-            CGFloat panelRight = panelLeft + 478;
+            CGFloat panelRight = panelLeft + panelWidth;
             CGFloat gridTop = toolbarY - 476;
             NSDictionary *queryField = nil;
             if ([collection isEqualToString:@"search"]) {
@@ -824,7 +860,7 @@ int main(int argc, const char *argv[]) {
             if (stickerPoint.y >= toolbarY - 15 || cell < 60 || cell > 130) Fail(@"STICKER_SLOT_NOT_VISIBLE", [NSString stringWithFormat:@"%ld", (long)index]);
             ClickGlobal(stickerPoint);
             usleep(500000);
-            BOOL panelDismissed = !AXString(tabElement, kAXRoleAttribute) || NSEqualRects(AXFrame(tabElement), NSZeroRect);
+            BOOL panelDismissed = tabElement && (!AXString(tabElement, kAXRoleAttribute) || NSEqualRects(AXFrame(tabElement), NSZeroRect));
             if (!panelDismissed) {
                 CGEventSourceRef closeSource = CGEventSourceCreate(kCGEventSourceStateCombinedSessionState);
                 PostKeyGlobal(closeSource, 53, 0);
@@ -832,7 +868,9 @@ int main(int argc, const char *argv[]) {
             }
             Emit(@{ @"ok": @YES, @"chat": chat, @"mediaKind": @"sticker", @"collection": collection,
                     @"index": @(index), @"queryChars": @(query.length), @"stickerAttempted": @YES,
-                    @"panelDismissed": @(panelDismissed),
+                    @"panelDismissed": @(panelDismissed), @"geometryCached": @(geometryCached),
+                    @"panelDX": @(panelLeft - NSMinX(emojiFrame)), @"tabDY": @(tabY - NSMinY(emojiFrame)),
+                    @"tabStep": @(tabStep), @"panelWidth": @(panelWidth),
                     @"signature": signature, @"latencyMs": @(-started.timeIntervalSinceNow * 1000) }, stdout);
             return 0;
         }
