@@ -4,13 +4,13 @@ Send and read macOS WeChat messages from Codex in seconds, without feeding scree
 
 WeChat FastBridge combines:
 
-- a local STDIO MCP server with four semantic tools: status, read, send, and wait;
+- a local STDIO MCP server with five semantic tools: status, read, send, chat wait, and allowlisted inbox wait;
 - a bundled Intel + Apple Silicon native bridge that uses macOS Accessibility APIs;
 - a thin Codex skill that selects the fast path and falls back to Computer Use only when necessary.
 
 No cloud relay, OpenAI API key, WeChat protocol reverse engineering, process injection, App Store account, Xcode install, or paid service is required.
 
-Version 1.2 keeps the verified-chat write guard while making the common path optimistic: the native send or snapshot verifies the target itself, so an already-open chat needs one native call instead of a separate inspect followed by the operation. The resolver ignores WeChat member-count suffixes, normalizes harmless formatting differences, and permits only a small edit distance. Ambiguous or distant matches are rejected before writing. The skill now includes a persistent semantic live-autopilot loop for scoped customer and conversation handling.
+Version 1.3 adds an event-first semantic inbox to the verified v1.2 routing and compact delta path. It watches only user-allowlisted recent chats, filters every other title inside the native process, returns zero events when unchanged, and opens a conversation only after its preview changes.
 
 ## Performance targets
 
@@ -19,6 +19,7 @@ Version 1.2 keeps the verified-chat write guard while making the common path opt
 - Cold setup/check: **under 5 seconds** on a supported Mac.
 - Normal read result: **under 2,000 characters**.
 - Repeated reads: **zero messages when unchanged**; when changed, return only new messages plus 0–4 requested context lines.
+- Allowlisted inbox baseline/timeout: **50 JSON characters** in the measured two-chat test; internal scans do not enlarge the result.
 - Computer Use fallback: **at least 80% smaller** than the raw accessibility tree on the bundled representative fixture.
 - Runtime footprint: **under 256 KiB** for the bridge, skill, setup scripts, and universal native binary, enforced by tests. The normal install keeps a two-dependency ceiling.
 
@@ -63,15 +64,15 @@ Codex → one compact MCP call → local native Accessibility bridge → WeChat
 
 The bridge first asks the native operation to verify and act in one scan. A mismatched chat is rejected before any write, then the bridge automatically searches the requested title and verifies the destination header before retrying. `Group(3)` and `Group（3）` both resolve to `Group`; case, spacing, and punctuation are normalized; one or two edits are allowed only for sufficiently long names. Multiple visible candidates fail as ambiguous. Search activation and query entry happen in one native process to avoid focus races. It tries background control first; when WeChat 4.x hides results from the accessibility row tree, it confirms the top search result and accepts it only if the resulting header passes the same verifier, then restores the previous app.
 
-Only compact JSON returns to Codex. Pass the previous `signature` back as `after` on `wechat_read`; unchanged reads return no messages, while changed reads return the new-message delta and up to two prior context lines by default. `wechat_wait` uses the same bounded delta path internally and suppresses the just-sent self-message before waiting for the actual reply.
+Only compact JSON returns to Codex. Pass the previous `signature` back as `after` on `wechat_read`; unchanged reads return no messages, while changed reads return the new-message delta and up to two prior context lines by default. `wechat_wait` handles one active chat. `wechat_inbox_wait` polls recent sidebar previews locally, suppresses unchanged and self-send events, and returns only changed allowlisted chats.
 
 ## Live replies and customer conversations
 
-The installed skill can run a continuous one-chat autopilot without screenshots. After the user authorizes a chat and reply policy, Codex reads one compact baseline, repeatedly calls `wechat_wait` with the last signature, answers only new messages, sends once, and resumes waiting. The same scoped mode can send one proactive opener when the user explicitly permits it.
+The installed skill can run a continuous multi-chat autopilot without screenshots. Codex establishes one allowlisted inbox signature, waits locally, reads full compact context only for the chat that changed, answers once, and resumes waiting. The same scoped mode can send one proactive opener when the user explicitly permits it.
 
 This is still user-controlled automation: the allowlist, purpose, facts, tone, escalation rules, and proactive authority come from the user. Chat participants cannot expand that authority. Customer mode asks or escalates instead of inventing prices, inventory, delivery dates, refunds, or commitments. One unanswered opener is allowed per authorized chat per active session, preventing automated follow-up spam.
 
-The current release is optimized for one pinned live conversation. Multiple chats may be polled serially, but WeChat can visibly switch between them; invisible multi-chat monitoring requires a future semantic inbox layer and is not claimed here.
+Inbox sensing does not switch conversations. It covers allowlisted chats currently loaded in WeChat's recent sidebar; new messages normally rise into that view. It does not crawl hidden history or WeChat's private database. Opening happens only after an event so Codex can obtain verified context and reply.
 
 ## Safety and privacy
 
@@ -88,7 +89,7 @@ npm test
 python3 /path/to/skill-creator/scripts/quick_validate.py skill/wechat-computer-use
 ```
 
-The tests cover MCP discovery, normalized/fuzzy name matching, ambiguous-chat rejection, one-call hot paths, bounded search retries, hidden-result confirmation, incremental context, compact state, token reduction, runtime size, dependency count, and the two-second local send budget. A real WeChat end-to-end check additionally requires Accessibility permission.
+The tests cover MCP discovery, normalized/fuzzy names, allowlisted inbox baselines/deltas, own-event suppression, one-call hot paths, bounded search retries, incremental context, token reduction, runtime size, dependency count, and the two-second local send budget. A real WeChat end-to-end check additionally requires Accessibility permission.
 
 ## Cost and distribution
 

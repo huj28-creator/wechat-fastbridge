@@ -1,10 +1,10 @@
 # Benchmarks
 
-## Version 1.2 algorithm gates
+## Version 1.3 algorithm gates
 
-The v1.2 hot path removes the separate `inspect-fast` process when the requested chat is already selected. The native `snapshot` and `send` commands still reject a mismatched selected row or header before returning or writing anything. The resolver additionally normalizes member counts/formatting, uses a bounded typo distance, and requires the selected conversation and final header to agree.
+The v1.3 hot path retains verified v1.2 routing and adds native allowlisted inbox events. Unchanged preview scans and unrelated titles are discarded before returning to Codex; message context is fetched only after an allowed event.
 
-| Gate | v1.0 path | v1.2 path |
+| Gate | v1.0 path | v1.3 path |
 | --- | ---: | ---: |
 | Already-selected send native calls | inspect + send | send |
 | Already-selected read native calls | inspect + snapshot | snapshot |
@@ -18,6 +18,8 @@ The v1.2 hot path removes the separate `inspect-fast` process when the requested
 | Production dependency ceiling | none | 2 |
 | Chat-name resolver | exact text | ignores member counts/formatting; bounded typo distance |
 | Live reply context | repeated full reads | signature wait + new delta + bounded context |
+| Multi-chat sensing | switch and read every chat | local allowlisted preview events |
+| Unchanged inbox payload | n/a | zero events |
 
 The one-call behavior, target-mismatch fallback, transient search-result retry, unchanged suppression, delta overlap, limit-change fallback, self-send suppression, and context bound are automated tests. Based on the separately measured 499 ms native send and 465 ms native snapshot below, removing the preceding scan should save roughly one native-process round trip on an already-selected chat. That is a component estimate, not a new end-to-end claim; real UI timings still vary with WeChat state and user activity.
 
@@ -41,6 +43,10 @@ Platform: macOS, WeChat 4.x, Apple Silicon. The bridge binary was the universal 
 | Final optimized bridge send total | 944 ms |
 | Final optimized command wall time | 1,253 ms |
 | Post-send delivery confirmation read | 654 ms |
+| v1.3 two-chat inbox baseline | 186 ms |
+| v1.3 unchanged 3-second inbox wait | 3,636 ms wall; 50-character result (~13 tokens) |
+| Estimated unchanged result payload over one hour | ~850 tokens at one 55-second timeout per call, excluding protocol/tool-call framing |
+| v1.3 non-allowlisted titles returned | 0 |
 | Full diagnostic result | 13,852 characters (~3,463 tokens) |
 | Compact 8-message result | 296 characters (~74 tokens) |
 | Real-result reduction | 97.9% |
@@ -53,7 +59,7 @@ Three user-authorized messages were delivered across development: `testing sendi
 ## Automated gates
 
 - MCP server exposes only compact semantic tools.
-- Twenty-one tests cover MCP discovery, normalized/fuzzy chat names, compact native round trips, optimistic single-call paths, automatic-selection recovery, inaccessible result confirmation, post-selection settling, incremental context, self-send suppression, skill packaging, runtime size, dependency count, token reduction, and wrong-chat rejection.
+- Twenty-four tests cover MCP discovery, normalized/fuzzy names, compact native round trips, allowlisted inbox baselines/deltas, own-event suppression, automatic-selection recovery, incremental context, skill packaging, runtime size, dependency count, token reduction, and wrong-chat rejection.
 - Compact Computer Use fallback removes at least 80% of representative UI-tree characters.
 - Exact-chat mismatch prevents writes.
 - Skill passes the standard Codex skill validator.

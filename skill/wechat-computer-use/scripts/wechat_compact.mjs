@@ -1,5 +1,4 @@
 const DEFAULT_APP = "com.tencent.xinWeChat";
-const MAX_POLL_MS = 55_000;
 
 function normalizeText(value) {
   return String(value ?? "").replace(/\r\n/g, "\n");
@@ -42,7 +41,6 @@ export function compactWechatTree(treeText, { targetChat, limit = 8 } = {}) {
   const inputLine = [...lines].reverse().find((line) =>
     line.includes("文本输入区") && line.includes("settable"),
   ) ?? "";
-  const focusedLine = lines.find((line) => line.startsWith("The focused UI element is")) ?? "";
   const messages = lines.map(extractMessage).filter(Boolean).slice(-boundedLimit);
   const inputIndex = extractElementIndex(inputLine);
   const targetMatched = chatHeaderMatches(raw, targetChat) && inputLine.includes(targetChat ?? "");
@@ -62,8 +60,6 @@ export function compactWechatTree(treeText, { targetChat, limit = 8 } = {}) {
     targetMatched,
     inputIndex,
     window: windowLine.replace(/^Window:\s*/, ""),
-    selected: selectedLine.trim() || null,
-    focused: focusedLine.replace(/^The focused UI element is\s*/, "") || null,
     messages,
     locked,
     viewer,
@@ -118,7 +114,7 @@ export function createWechatController({ sky, app = DEFAULT_APP } = {}) {
 
     const after = await state({ targetChat, limit, disableDiff: false });
     return {
-      ok: after.messages.some((message) => message.includes(`我说:${text}`)) || after.selected?.includes(text) || false,
+      ok: after.messages.some((message) => message.includes(`我说:${text}`)),
       targetChat,
       sentChars: text.length,
       signature: after.signature,
@@ -127,17 +123,5 @@ export function createWechatController({ sky, app = DEFAULT_APP } = {}) {
     };
   }
 
-  async function poll({ targetChat, after, limit = 8, intervalMs = 3_000, maxMs = 30_000 } = {}) {
-    if (!targetChat) throw new TypeError("targetChat is required");
-    const wait = Math.max(500, Math.min(10_000, Number(intervalMs) || 3_000));
-    const deadline = Date.now() + Math.max(0, Math.min(MAX_POLL_MS, Number(maxMs) || 30_000));
-    let current = await state({ targetChat, limit, disableDiff: false });
-    while (current.signature === after && Date.now() < deadline) {
-      await new Promise((resolve) => setTimeout(resolve, wait));
-      current = await state({ targetChat, limit, disableDiff: false });
-    }
-    return { changed: current.signature !== after, ...current };
-  }
-
-  return Object.freeze({ state, send, poll });
+  return Object.freeze({ state, send });
 }

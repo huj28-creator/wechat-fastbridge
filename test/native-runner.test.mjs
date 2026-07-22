@@ -276,6 +276,55 @@ test("wait suppresses the just-sent message and returns the actual reply", async
   assert.equal(result.changed, true);
 });
 
+test("inbox wait establishes a compact zero-event baseline", async () => {
+  const bridge = new NativeBridge();
+  bridge.run = async (command) => {
+    assert.equal(command, "inbox");
+    return { ok: true, chats: [{ chat: "Customer", preview: "hello", unread: 1, signature: "c1" }], signature: "i1" };
+  };
+  const result = await bridge.inboxWait({ chats: ["Customer"], timeoutMs: 0 });
+  assert.equal(result.changed, false);
+  assert.equal(result.signature, "i1");
+  assert.ok(JSON.stringify(result).length < 80, JSON.stringify(result));
+});
+
+test("inbox wait returns only changed allowlisted chat events", async () => {
+  const states = [
+    { ok: true, chats: [
+      { chat: "Customer A", preview: "old", unread: 0, signature: "a1" },
+      { chat: "Customer B", preview: "same", unread: 0, signature: "b1" },
+    ], signature: "i1" },
+    { ok: true, chats: [
+      { chat: "Customer A", preview: "new question", unread: 1, signature: "a2" },
+      { chat: "Customer B", preview: "same", unread: 0, signature: "b1" },
+    ], signature: "i2" },
+  ];
+  const bridge = new NativeBridge();
+  bridge.run = async () => states.shift();
+  const baseline = await bridge.inboxWait({ chats: ["Customer A", "Customer B"], timeoutMs: 0 });
+  const changed = await bridge.inboxWait({ chats: ["Customer A", "Customer B"], after: baseline.signature, timeoutMs: 0 });
+  assert.equal(changed.changed, true);
+  assert.deepEqual(changed.events.map((event) => event.chat), ["Customer A"]);
+  assert.equal(changed.events[0].preview, "new question");
+});
+
+test("inbox wait suppresses own-send previews before surfacing a reply", async () => {
+  const inboxStates = [
+    { ok: true, chats: [{ chat: "Customer", preview: "before", unread: 0, signature: "c1" }], signature: "i1" },
+    { ok: true, chats: [{ chat: "Customer", preview: "hello", unread: 0, signature: "c2" }], signature: "i2" },
+    { ok: true, chats: [{ chat: "Customer", preview: "thanks", unread: 1, signature: "c3" }], signature: "i3" },
+  ];
+  const bridge = new NativeBridge({ delay: async () => {} });
+  bridge.run = async (command) => {
+    if (command === "send") return { ok: true, chat: "Customer", inputCleared: true, signature: "s1" };
+    return inboxStates.shift();
+  };
+  await bridge.send({ chat: "Customer", text: "hello" });
+  const baseline = await bridge.inboxWait({ chats: ["Customer"], timeoutMs: 0 });
+  const changed = await bridge.inboxWait({ chats: ["Customer"], after: baseline.signature, timeoutMs: 1_000, intervalMs: 500 });
+  assert.deepEqual(changed.events.map((event) => event.preview), ["thanks"]);
+});
+
 test("one-message delta is materially smaller than an eight-message read", async () => {
   const messages = Array.from({ length: 9 }, (_, index) => `${index}:${"context".repeat(10)}`);
   const states = [

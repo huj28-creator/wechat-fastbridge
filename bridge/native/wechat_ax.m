@@ -189,6 +189,35 @@ static BOOL RowTitleMatches(NSString *value, NSString *chat) {
     return separator.location != NSNotFound && ChatNameMatches([value substringToIndex:separator.location], chat);
 }
 
+static NSString *FNV1a(NSString *value);
+
+static NSDictionary *InboxEntry(NSArray<NSString *> *strings, BOOL selected) {
+    if (!strings.count) return nil;
+    NSString *joined = [strings componentsJoinedByString:@" | "];
+    NSString *title = @"";
+    NSString *preview = @"";
+    for (NSString *value in strings) {
+        NSRange separator = [value rangeOfString:@","];
+        if (separator.location != NSNotFound) {
+            title = [[value substringToIndex:separator.location] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+            NSArray<NSString *> *parts = [value componentsSeparatedByString:@","];
+            if (parts.count > 1) preview = [parts[1] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+            break;
+        }
+    }
+    if (!title.length && strings.count > 1) {
+        title = [strings[0] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        preview = [strings[1] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    }
+    if (!title.length || [title isEqualToString:@"会话"] || [title isEqualToString:@"消息"]) return nil;
+    if (preview.length > 160) preview = [[preview substringToIndex:159] stringByAppendingString:@"…"];
+    NSRegularExpression *unreadPattern = [NSRegularExpression regularExpressionWithPattern:@"(\\d+)条未读" options:0 error:nil];
+    NSTextCheckingResult *unreadMatch = [unreadPattern firstMatchInString:joined options:0 range:NSMakeRange(0, joined.length)];
+    NSInteger unread = unreadMatch.numberOfRanges > 1 ? [[joined substringWithRange:[unreadMatch rangeAtIndex:1]] integerValue] : 0;
+    NSString *signature = FNV1a([NSString stringWithFormat:@"%@\n%@\n%ld", NormalizeChatName(title), preview, (long)unread]);
+    return @{ @"chat": title, @"preview": preview, @"unread": @(unread), @"selected": @(selected), @"signature": signature };
+}
+
 static NSString *FNV1a(NSString *value) {
     uint32_t hash = 2166136261u;
     NSData *data = [value dataUsingEncoding:NSUTF8StringEncoding];
@@ -232,6 +261,14 @@ static NSArray *AXActions(AXUIElementRef element) {
 static NSString *Option(NSArray<NSString *> *args, NSString *name) {
     NSUInteger index = [args indexOfObject:name];
     return index != NSNotFound && index + 1 < args.count ? args[index + 1] : nil;
+}
+
+static NSArray<NSString *> *Options(NSArray<NSString *> *args, NSString *name) {
+    NSMutableArray<NSString *> *values = [NSMutableArray array];
+    for (NSUInteger index = 0; index + 1 < args.count; index++) {
+        if ([args[index] isEqualToString:name]) [values addObject:args[index + 1]];
+    }
+    return values;
 }
 
 static void PostKeyToPid(CGEventSourceRef source, pid_t pid, CGKeyCode key, CGEventFlags flags) {
@@ -337,11 +374,14 @@ int main(int argc, const char *argv[]) {
             Fail(@"WECHAT_FOCUS_FAILED", @"macOS did not bring WeChat to the foreground");
         }
 
-        NSString *chat = Option(args, @"--chat");
-        if (!chat.length) Fail(@"CHAT_REQUIRED", @"Pass the requested chat title");
+        BOOL inboxMode = [command isEqualToString:@"inbox"];
+        NSArray<NSString *> *allowedChats = Options(args, @"--allow");
+        if (inboxMode && !allowedChats.count) Fail(@"ALLOWLIST_REQUIRED", @"Pass at least one --allow chat title");
+        NSString *chat = Option(args, @"--chat") ?: @"";
+        if (!inboxMode && !chat.length) Fail(@"CHAT_REQUIRED", @"Pass the requested chat title");
         NSInteger limit = MAX(1, MIN(20, [Option(args, @"--limit") ?: @"8" integerValue]));
         BOOL fastScan = [command isEqualToString:@"search"] || [command isEqualToString:@"select"] ||
-                        [command isEqualToString:@"send"] || [command isEqualToString:@"inspect-fast"];
+                        [command isEqualToString:@"send"] || [command isEqualToString:@"inspect-fast"] || inboxMode;
         NSInteger pruneMode = fastScan ? 1 : ([command isEqualToString:@"snapshot"] ? 2 : 0);
         NSArray<NSDictionary *> *nodes = nil;
         NSDictionary *window = nil;
@@ -392,6 +432,8 @@ int main(int argc, const char *argv[]) {
         NSMutableArray *inspectAllFields = [NSMutableArray array];
         NSMutableArray *inspectText = [NSMutableArray array];
         NSMutableArray *inspectRight = [NSMutableArray array];
+        NSMutableArray *inboxEntries = [NSMutableArray array];
+        NSMutableSet *inboxSeen = [NSMutableSet set];
         NSDictionary *targetRow = nil;
         NSUInteger targetRowMatches = 0;
         NSDictionary *searchField = nil;
@@ -417,6 +459,17 @@ int main(int argc, const char *argv[]) {
                 NSMidY(nodeFrame) >= NSMinY(windowFrame) && NSMidY(nodeFrame) <= NSMaxY(windowFrame);
             if (visibleLeftResult) {
                 NSArray<NSString *> *candidateStrings = SubtreeStrings((__bridge AXUIElementRef)node[@"element"]);
+                if (inboxMode && [role isEqualToString:(__bridge NSString *)kAXRowRole] && inboxEntries.count < limit) {
+                    NSDictionary *entry = InboxEntry(candidateStrings, [node[@"selected"] boolValue]);
+                    NSString *title = entry[@"chat"];
+                    NSUInteger allowMatches = 0;
+                    for (NSString *allowed in allowedChats) if (ChatNameMatches(title, allowed)) allowMatches += 1;
+                    NSString *dedupe = title.length ? [NSString stringWithFormat:@"%@:%@", NormalizeChatName(title), entry[@"signature"] ?: @""] : @"";
+                    if (entry && allowMatches == 1 && ![inboxSeen containsObject:dedupe]) {
+                        [inboxEntries addObject:entry];
+                        [inboxSeen addObject:dedupe];
+                    }
+                }
                 for (NSString *value in candidateStrings) {
                     if (RowTitleMatches(value, chat)) {
                         if (!targetRow) {
@@ -461,6 +514,13 @@ int main(int argc, const char *argv[]) {
                     if (inspectRight.count < 40) [inspectRight addObject:@{@"role": role, @"value": value}];
                 }
             }
+        }
+        if (inboxMode) {
+            NSMutableArray<NSString *> *parts = [NSMutableArray array];
+            for (NSDictionary *entry in inboxEntries) [parts addObject:[NSString stringWithFormat:@"%@:%@", entry[@"chat"], entry[@"signature"]]];
+            Emit(@{ @"ok": @YES, @"chats": inboxEntries, @"signature": FNV1a([parts componentsJoinedByString:@"\n"]),
+                    @"matchedCount": @(inboxEntries.count), @"scanMs": @(-started.timeIntervalSinceNow * 1000) }, stdout);
+            return 0;
         }
         if ([command isEqualToString:@"search"]) {
             if (!searchField) Fail(@"WECHAT_SEARCH_FIELD_NOT_FOUND", chat);

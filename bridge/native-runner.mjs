@@ -5,6 +5,31 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 const defaultBinary = new URL("./native/wechat-ax", import.meta.url).pathname;
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const normalizeChat = (value) => String(value || "")
+  .replace(/\s*[（(]\s*\d+\s*[)）]\s*$/u, "")
+  .normalize("NFKC").toLocaleLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+const editDistance = (left, right) => {
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= left.length; i += 1) {
+    let diagonal = previous[0];
+    previous[0] = i;
+    for (let j = 1; j <= right.length; j += 1) {
+      const above = previous[j];
+      previous[j] = Math.min(previous[j] + 1, previous[j - 1] + 1, diagonal + (left[i - 1] === right[j - 1] ? 0 : 1));
+      diagonal = above;
+    }
+  }
+  return previous[right.length];
+};
+const chatNamesClose = (left, right) => {
+  const a = normalizeChat(left); const b = normalizeChat(right);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const shortest = Math.min(a.length, b.length);
+  if (shortest < 3) return false;
+  const allowed = shortest <= 5 ? 1 : shortest <= 10 ? 2 : Math.min(3, Math.max(2, Math.floor(shortest / 5)));
+  return editDistance(a, b) <= allowed;
+};
 
 export class NativeBridge {
   constructor({
@@ -19,6 +44,7 @@ export class NativeBridge {
     this.delay = delay;
     this.snapshots = new Map();
     this.pendingSends = new Map();
+    this.inboxSnapshots = new Map();
   }
 
   async available() {
@@ -56,6 +82,11 @@ export class NativeBridge {
   status() { return this.run("status"); }
   select({ chat }) { return this.run("select", ["--chat", chat]); }
   #readRaw({ chat, limit = 8 }) { return this.run("snapshot", ["--chat", chat, "--limit", String(limit)]); }
+  #inboxRaw({ chats, limit = 12 }) {
+    const args = ["--limit", String(limit)];
+    for (const chat of chats) args.push("--allow", chat);
+    return this.run("inbox", args);
+  }
   async #frontBundle() {
     if (this.system.frontBundle) return this.system.frontBundle();
     try {
@@ -163,6 +194,49 @@ export class NativeBridge {
     while (this.snapshots.size > 8) this.snapshots.delete(this.snapshots.keys().next().value);
   }
 
+  #inboxKey(chats) { return [...new Set(chats.map((chat) => normalizeChat(chat)).filter(Boolean))].sort().join("\n"); }
+
+  #rememberInbox(key, result) {
+    if (!result?.signature || !Array.isArray(result.chats)) return;
+    const history = (this.inboxSnapshots.get(key)?.history ?? []).filter((item) => item.signature !== result.signature);
+    history.push({ signature: result.signature, chats: result.chats.map((entry) => ({ ...entry })) });
+    this.inboxSnapshots.delete(key);
+    this.inboxSnapshots.set(key, { history: history.slice(-4) });
+    while (this.inboxSnapshots.size > 8) this.inboxSnapshots.delete(this.inboxSnapshots.keys().next().value);
+  }
+
+  #projectInbox(key, result, after) {
+    const projected = { ok: true, signature: result.signature, changed: false, events: [] };
+    if (!after) {
+      projected.baseline = true;
+    } else if (result.signature === after) {
+      projected.delta = true;
+    } else {
+      const previous = this.inboxSnapshots.get(key)?.history.find((item) => item.signature === after);
+      projected.changed = true;
+      if (previous) {
+        const old = new Map(previous.chats.map((entry) => [normalizeChat(entry.chat), entry.signature]));
+        projected.events = result.chats.filter((entry) => old.get(normalizeChat(entry.chat)) !== entry.signature);
+        projected.delta = true;
+      } else {
+        projected.resynced = true;
+        projected.delta = false;
+      }
+    }
+    projected.eventCount = projected.events.length;
+    this.#rememberInbox(key, result);
+    return projected;
+  }
+
+  #isOwnInboxEvent(event) {
+    const now = Date.now();
+    for (const [chat, pending] of this.pendingSends) {
+      if (now - (pending.at || 0) > 120_000) continue;
+      if (chatNamesClose(chat, event.chat) && event.preview?.includes(pending.text)) return true;
+    }
+    return false;
+  }
+
   #projectDelta(result, { after, context = 2, limit } = {}) {
     const fullMessages = Array.isArray(result.messages) ? result.messages : [];
     const previous = this.snapshots.get(result.chat)?.history.find((item) => item.signature === after && item.limit === limit);
@@ -218,6 +292,25 @@ export class NativeBridge {
     return this.#projectDelta(result, { after, context, limit });
   }
 
+  async inboxWait({ chats, after, limit = 12, timeoutMs = 30_000, intervalMs = 1_500 }) {
+    const allowlist = [...new Set((chats || []).map((chat) => String(chat).trim()).filter(Boolean))].slice(0, 8);
+    if (!allowlist.length) throw Object.assign(new Error("ALLOWLIST_REQUIRED"), { error: "ALLOWLIST_REQUIRED", detail: "Pass at least one monitored chat" });
+    const key = this.#inboxKey(allowlist);
+    const deadline = performance.now() + Math.max(0, Math.min(55_000, timeoutMs));
+    let state = await this.#inboxRaw({ chats: allowlist, limit: Math.max(1, Math.min(20, limit)) });
+    let baseline = after || state.signature;
+    if (!after) this.#rememberInbox(key, state);
+    while (true) {
+      const projected = this.#projectInbox(key, state, baseline);
+      const externalEvents = projected.events.filter((event) => !this.#isOwnInboxEvent(event));
+      if (externalEvents.length) return { ...projected, changed: true, events: externalEvents, eventCount: externalEvents.length };
+      if (state.signature !== baseline) baseline = state.signature;
+      if (performance.now() >= deadline) return { ok: true, changed: false, signature: baseline };
+      await this.delay(Math.max(500, Math.min(5_000, intervalMs)));
+      state = await this.#inboxRaw({ chats: allowlist, limit: Math.max(1, Math.min(20, limit)) });
+    }
+  }
+
   async send({ chat, text, limit = 8, autoSelect = true, allowFocus = true }) {
     const totalStarted = performance.now();
     let previousBundle = "";
@@ -255,7 +348,7 @@ export class NativeBridge {
       result.totalMs = Math.round((performance.now() - totalStarted) * 10) / 10;
       if (result.signature) {
         this.pendingSends.delete(chat);
-        this.pendingSends.set(chat, { signature: result.signature, text });
+        this.pendingSends.set(chat, { signature: result.signature, text, at: Date.now() });
         while (this.pendingSends.size > 8) this.pendingSends.delete(this.pendingSends.keys().next().value);
       }
       return result;

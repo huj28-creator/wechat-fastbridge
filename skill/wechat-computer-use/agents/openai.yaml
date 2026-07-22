@@ -1,4 +1,4 @@
 interface:
   display_name: "WeChat FastBridge"
-  short_description: "Fast, token-light WeChat live replies and control"
-  default_prompt: "Use $wechat-computer-use to resolve, read, reply, or continuously monitor an authorized WeChat chat using compact FastBridge tools without screenshots."
+  short_description: "Event-driven, token-light WeChat live replies"
+  default_prompt: "Use $wechat-computer-use to sense allowlisted WeChat events locally, read only changed chats, and reply continuously without screenshots."

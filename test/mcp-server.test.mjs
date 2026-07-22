@@ -23,12 +23,14 @@ test("MCP server exposes the fast semantic WeChat tools", async () => {
     const listed = await client.listTools();
     assert.deepEqual(
       listed.tools.map((tool) => tool.name).sort(),
-      ["wechat_read", "wechat_send", "wechat_status", "wechat_wait"],
+      ["wechat_inbox_wait", "wechat_read", "wechat_send", "wechat_status", "wechat_wait"],
     );
     const result = await client.callTool({ name: "wechat_send", arguments: { chat: "lab", text: "hello", autoSelect: false, allowFocus: false } });
     assert.equal(result.structuredContent.ok, true);
     assert.deepEqual(JSON.parse(result.content[0].text), { ok: true, chat: "lab", messageCount: 1, signature: "abc123" });
     assert.ok(JSON.stringify(result).length < 700);
+    const inbox = await client.callTool({ name: "wechat_inbox_wait", arguments: { chats: ["lab"], timeoutMs: 0 } });
+    assert.deepEqual(inbox.structuredContent, { ok: true, changed: false, signature: "abc123" });
   } finally {
     await transport.close();
   }
