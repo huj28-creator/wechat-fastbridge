@@ -5,13 +5,25 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 const defaultBinary = new URL("./native/wechat-ax", import.meta.url).pathname;
 const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const semanticConcepts = [
+  ["@money", /价格|价钱|费用|预算|报价|金额|付款|支付|退款|多少钱|贵|便宜|price|cost|budget|quote|pay|refund/iu],
+  ["@time", /时间|日期|几号|几点|何时|什么时候|今天|明天|周[一二三四五六日天]|星期|截止|多久|time|date|when|today|tomorrow|deadline/iu],
+  ["@delivery", /发货|到货|送达|快递|物流|配送|交付|shipping|ship|deliver|courier|tracking/iu],
+  ["@place", /地址|地点|位置|哪里|哪儿|在哪|门店|address|location|where|store/iu],
+  ["@quantity", /数量|几个|多少件|库存|有货|缺货|quantity|how many|stock|available/iu],
+  ["@identity", /谁|哪位|联系人|负责人|姓名|名字|who|contact|owner|name/iu],
+  ["@decision", /确认|决定|同意|拒绝|可以吗|行不行|是否|选择|confirm|decide|agree|reject|choose/iu],
+  ["@preference", /喜欢|偏好|想要|颜色|尺寸|款式|prefer|like|want|color|size|style/iu],
+  ["@problem", /问题|错误|失败|坏了|不能|无法|异常|投诉|problem|error|fail|broken|issue|complaint/iu],
+];
 const semanticTerms = (value) => {
   const text = String(value || "").normalize("NFKC").toLocaleLowerCase();
-  const terms = new Set(text.match(/[a-z0-9][a-z0-9._@/-]{1,}/g) || []);
+  const terms = new Set(text.match(/[a-z][a-z0-9._@/-]+|\d+(?:[.,]\d+)?/g) || []);
   for (const run of text.match(/[\p{Script=Han}]{2,}/gu) || []) {
     if (run.length <= 6) terms.add(run);
     for (let index = 0; index + 1 < run.length; index += 1) terms.add(run.slice(index, index + 2));
   }
+  for (const [concept, pattern] of semanticConcepts) if (pattern.test(text)) terms.add(concept);
   return terms;
 };
 const appendWindow = (history, window) => {
@@ -226,9 +238,17 @@ export class NativeBridge {
     const candidates = memory.map((message, index) => ({ message, index })).filter(({ message }) => !queryMessages.has(message));
     if (!candidates.length) return [];
     const selected = new Set([candidates.at(-1).index]);
-    const ranked = candidates.slice(0, -1).map((candidate) => {
+    const candidateTerms = candidates.map(({ message }) => semanticTerms(message));
+    const frequency = new Map();
+    for (const terms of candidateTerms) for (const term of terms) frequency.set(term, (frequency.get(term) ?? 0) + 1);
+    const ranked = candidates.slice(0, -1).map((candidate, candidateIndex) => {
       let score = 0;
-      for (const term of semanticTerms(candidate.message)) if (querySet.has(term)) score += /^[a-z0-9]/.test(term) ? 3 : 2;
+      for (const term of candidateTerms[candidateIndex]) {
+        if (!querySet.has(term)) continue;
+        const rarity = Math.log1p(candidates.length / (frequency.get(term) ?? 1));
+        const weight = term.startsWith("@") || /^\d/.test(term) ? 4 : /^[a-z]/.test(term) ? 3 : 2;
+        score += weight * rarity;
+      }
       return { ...candidate, score: score + candidate.index / Math.max(1, memory.length) };
     }).sort((left, right) => right.score - left.score || right.index - left.index);
     for (const candidate of ranked) if (selected.size < wanted && candidate.score >= 1) selected.add(candidate.index);

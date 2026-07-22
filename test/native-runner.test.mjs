@@ -226,6 +226,22 @@ test("smart context retrieves an older relevant fact plus recent continuity", as
   assert.ok(delta.context.length <= 3);
 });
 
+test("smart context connects Chinese synonyms without retransmitting full history", async () => {
+  const firstWindow = ["客服说:这款价格是500元", "客服说:周五发货", "我说:先考虑", "客服说:没问题", "我说:谢谢", "客服说:不客气"];
+  const states = [
+    { ok: true, chat: "shop", messages: firstWindow, signature: "s1" },
+    { ok: true, chat: "shop", messages: [...firstWindow.slice(1), "我说:这个多少钱，什么时候能到"], signature: "s2" },
+  ];
+  const bridge = new NativeBridge();
+  bridge.run = async () => states.shift();
+  const baseline = await bridge.read({ chat: "shop", limit: 6 });
+  const delta = await bridge.read({ chat: "shop", limit: 6, after: baseline.signature, context: 3 });
+  assert.deepEqual(delta.messages, ["我说:这个多少钱，什么时候能到"]);
+  assert.ok(delta.context.includes("客服说:这款价格是500元"), JSON.stringify(delta.context));
+  assert.ok(delta.context.includes("客服说:周五发货"), JSON.stringify(delta.context));
+  assert.ok(JSON.stringify(delta.context).length < JSON.stringify(firstWindow).length);
+});
+
 test("wait reads its baseline once and returns only the reply delta", async () => {
   const calls = [];
   const states = [

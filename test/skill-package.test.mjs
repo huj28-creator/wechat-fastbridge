@@ -12,6 +12,7 @@ test("skill package has concise valid discovery metadata", async () => {
   assert.deepEqual(keys, ["name", "description"]);
   assert.match(match[1], /^name: wechat-computer-use$/m);
   assert.ok(markdown.split("\n").length < 150, "keep the triggered skill compact");
+  assert.ok(Buffer.byteLength(markdown) < 5_000, "keep skill instructions token-light");
 
   const interfaceYaml = await readFile(new URL("agents/openai.yaml", skillDir), "utf8");
   assert.match(interfaceYaml, /display_name: "WeChat FastBridge"/);
