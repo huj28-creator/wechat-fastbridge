@@ -36,6 +36,10 @@
     .window-chrome i { display:block; width:13px; height:13px; border-radius:50%; background:#c8d1cb; }
     .window-chrome i:nth-child(1){background:#ff645f}.window-chrome i:nth-child(2){background:#ffbd45}.window-chrome i:nth-child(3){background:#28c940}
     .contact-shot { height:152px; background:#d7d7d7 url('./assets/jerry-chat.png') center/cover no-repeat; border-bottom:1px solid #c9d0cb; }
+    .contact-shot.generic { display:flex; align-items:center; gap:20px; padding:0 34px; background:#d7d7d7; }
+    .generic-avatar { width:78px; height:78px; border-radius:18px; display:grid; place-items:center; background:linear-gradient(145deg,#20c873,#06994b); color:#fff; font-size:34px; font-weight:850; box-shadow:0 10px 24px rgba(7,193,96,.22); }
+    .generic-title { font-size:29px; font-weight:800; color:#17231c; }
+    .generic-subtitle { margin-top:7px; font-size:18px; color:#66736b; }
     .chat-area { position:relative; height:480px; padding:40px; background:linear-gradient(145deg,#edf2ee,#e5ebe7); }
     .bubble { position:absolute; right:42px; top:105px; padding:24px 30px; border-radius:22px 8px 22px 22px; background:var(--green); color:white; font-size:28px; font-weight:650; box-shadow:0 18px 40px rgba(7,193,96,.24); white-space:nowrap; overflow:hidden; max-width:0; }
     .cursor { display:inline-block; width:2px; height:30px; background:#fff; margin-left:3px; vertical-align:-4px; }
@@ -149,19 +153,22 @@
     document.querySelector('.status').innerHTML = '<span class="dot"></span>本地 / 就绪';
     document.querySelector('#s1 .eyebrow').textContent = '直接用 Codex 控制 Mac 微信';
     document.querySelector('#s1 h1').innerHTML = '不用切到微信。<br><em>直接让 Codex 发。</em>';
-    document.querySelector('#s1 p').textContent = '你只要说：“给 Jerry 发一条消息。”';
+    document.querySelector('#s1 p').textContent = '你只要说：“给项目群发：会议改到三点。”';
     document.querySelector('#s2 .eyebrow').textContent = '真实 Mac 实测';
-    document.querySelector('#s2 h2').innerHTML = '自动找到 Jerry。<br>核对后立即发送。';
+    document.querySelector('#s2 h2').innerHTML = '自动找到目标群聊。<br>核对后立即发送。';
+    document.querySelector('#s2 .contact-shot').classList.add('generic');
+    document.querySelector('#s2 .contact-shot').innerHTML = '<div class="generic-avatar">项</div><div><div class="generic-title">项目讨论群</div><div class="generic-subtitle">12 位成员</div></div>';
+    document.querySelector('#s2 .bubble').innerHTML = '会议改到三点，资料已更新。<span class="cursor"></span>';
     document.querySelector('#s2 .timer span').textContent = '秒';
     document.querySelector('#s2 p').textContent = '无需手动点开聊天；消息成功发出，而且只发送一次。';
     document.querySelector('#s2 .micro').textContent = '命令到结果 1,252.7 毫秒 · macOS · 2026-07-22';
-    document.querySelector('#s2 .verify').innerHTML = '<span class="check">✓</span>精确聊天已验证 · JERRY';
+    document.querySelector('#s2 .verify').innerHTML = '<span class="check">✓</span>精确聊天已验证 · 项目讨论群';
     document.querySelector('#s3 .eyebrow').textContent = '相比 COMPUTER USE 的完整辅助功能树';
     document.querySelector('#s3 h2').textContent = '读取 8 条消息，约省 3,400 Token。';
     document.querySelector('#s3 .pipeline-sub').textContent = '13,852 字符 → 296 字符；按 4 字符≈1 Token 粗估，减少约 97.9%。';
     const zhNodes = [
-      ['你告诉 Codex', '“给 Jerry 发消息”'],
-      ['自动搜索', '找到名为 Jerry 的聊天'],
+      ['你告诉 Codex', '“给项目群发消息”'],
+      ['自动搜索', '找到名称完全匹配的聊天'],
       ['核对联系人', '确认没有发错聊天'],
       ['微信发送', '消息发出并返回结果'],
     ];
@@ -178,7 +185,7 @@
     document.querySelector('#s4 .quiet-copy p').textContent = 'FastBridge 会自动搜索聊天名称并核对目标。微信必须前置时，它只短暂切换，发送后马上回到你原来的窗口。';
     const zhFeatures = ['本地运行', 'MIT 开源', '无需 API 密钥', '无需 App Store'];
     document.querySelectorAll('#s4 .feature').forEach((feature, index) => feature.textContent = zhFeatures[index]);
-    document.querySelector('#s4 .fake-code').innerHTML = '<span class="g">wechat_read</span>({ chat: "Jerry" })<br>→ 4 条消息 · 1.385 秒<br><br><span class="g">wechat_wait</span>({ after: signature })<br>→ 不返回未变化状态<br><br><span class="g">wechat_send</span>({ chat: "Jerry" })<br>→ 精确目标已验证';
+    document.querySelector('#s4 .fake-code').innerHTML = '<span class="g">wechat_read</span>({ chat: "项目讨论群" })<br>→ 4 条消息 · 1.385 秒<br><br><span class="g">wechat_wait</span>({ after: signature })<br>→ 不返回未变化状态<br><br><span class="g">wechat_send</span>({ chat: "项目讨论群" })<br>→ 精确目标已验证';
     document.querySelector('#s4 .quiet-badge span').textContent = '自动恢复';
     document.querySelector('#s5 .eyebrow').textContent = '免费 · 本地运行 · 开源';
     document.querySelector('#s5 h2').innerHTML = '把微信消息<br><em>交给 Codex。</em>';
